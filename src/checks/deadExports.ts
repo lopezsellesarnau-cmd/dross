@@ -34,13 +34,21 @@ const EXPORT_PATTERNS = [
 // `export { a, b as c }` — captures the whole brace group, split separately.
 const EXPORT_LIST_PATTERN = /export\s*\{([^}]+)\}\s*(?:from\s+['"][^'"]+['"])?/g
 
-function extractExportedNames(text: string): string[] {
-  const names = new Set<string>()
+type ExportedName = { name: string; index: number }
+
+function extractExportedNames(text: string): ExportedName[] {
+  // First occurrence per name wins the line number — a name can only be
+  // declared once as an export in valid source, so this is the declaration
+  // site, which is what the code-preview panel needs to jump to.
+  const byName = new Map<string, number>()
+  const record = (name: string, index: number) => {
+    if (!byName.has(name)) byName.set(name, index)
+  }
 
   for (const pattern of EXPORT_PATTERNS) {
     pattern.lastIndex = 0
     let m: RegExpExecArray | null
-    while ((m = pattern.exec(text))) names.add(m[1])
+    while ((m = pattern.exec(text))) record(m[1], m.index)
   }
 
   EXPORT_LIST_PATTERN.lastIndex = 0
@@ -52,11 +60,19 @@ function extractExportedNames(text: string): string[] {
       const trimmed = part.trim()
       if (!trimmed || trimmed.startsWith('default')) continue
       const asMatch = trimmed.match(/\bas\s+([A-Za-z_$][\w$]*)/)
-      names.add(asMatch ? asMatch[1] : trimmed.split(/\s+/)[0])
+      record(asMatch ? asMatch[1] : trimmed.split(/\s+/)[0], listMatch.index)
     }
   }
 
-  return [...names]
+  return [...byName.entries()].map(([name, index]) => ({ name, index }))
+}
+
+function lineNumberAt(text: string, index: number): number {
+  let line = 1
+  for (let i = 0; i < index && i < text.length; i++) {
+    if (text.charCodeAt(i) === 10) line++
+  }
+  return line
 }
 
 function fileBaseName(relPath: string): string {
@@ -64,8 +80,32 @@ function fileBaseName(relPath: string): string {
   return slash === -1 ? relPath : relPath.slice(slash + 1)
 }
 
+// Every identifier-shaped token in the file, once. Reused for both "does
+// this name appear in this file" and "how many times" — the two questions
+// the check actually needs — without re-running a fresh regex per name.
+const TOKEN_PATTERN = /[A-Za-z_$][\w$]*/g
+
+function tokenCounts(text: string): Map<string, number> {
+  const counts = new Map<string, number>()
+  TOKEN_PATTERN.lastIndex = 0
+  let m: RegExpExecArray | null
+  while ((m = TOKEN_PATTERN.exec(text))) {
+    counts.set(m[0], (counts.get(m[0]) ?? 0) + 1)
+  }
+  return counts
+}
+
+/**
+ * Was O(exports × files), re-scanning every other file's full text with a
+ * fresh RegExp per exported name — measured hanging past 45s / ballooning
+ * to 4GB+ heap on a few thousand files. Now one tokenization pass per file
+ * (O(total source size)), then each export is a map lookup per file
+ * (O(exports × files) lookups, but O(1) each, not O(filesize) each) —
+ * the same check, correctly bounded.
+ */
 export function checkDeadExports(files: SourceFile[]): Finding[] {
   const findings: Finding[] = []
+  const tokensByFile = new Map(files.map((f) => [f.absPath, tokenCounts(f.text)]))
 
   for (const file of files) {
     if (ENTRY_POINT_FILENAMES.has(fileBaseName(file.relPath))) continue
@@ -75,14 +115,12 @@ export function checkDeadExports(files: SourceFile[]): Finding[] {
     if (/\.(test|spec)\.[jt]sx?$/.test(file.relPath)) continue
 
     const exported = extractExportedNames(file.text)
-    for (const name of exported) {
+    for (const { name, index } of exported) {
       if (name.length <= 2) continue // too short to grep reliably without false negatives eating the signal
 
-      const usedElsewhere = files.some((other) => {
-        if (other.absPath === file.absPath) return false
-        const pattern = new RegExp(`\\b${name}\\b`)
-        return pattern.test(other.text)
-      })
+      const usedElsewhere = files.some(
+        (other) => other.absPath !== file.absPath && (tokensByFile.get(other.absPath)?.get(name) ?? 0) > 0,
+      )
       if (usedElsewhere) continue
 
       // Distinguish "nothing references this at all" (real dead code) from
@@ -90,13 +128,14 @@ export function checkDeadExports(files: SourceFile[]): Finding[] {
       // export is pointless — a different, lower-confidence claim). Two
       // occurrences of the name in its own file means declaration + at
       // least one use; one occurrence means only the declaration exists.
-      const ownFileMatches = file.text.match(new RegExp(`\\b${name}\\b`, 'g')) ?? []
-      const usedWithinOwnFile = ownFileMatches.length > 1
+      const ownFileCount = tokensByFile.get(file.absPath)?.get(name) ?? 0
+      const usedWithinOwnFile = ownFileCount > 1
 
       findings.push({
         check: 'dead-exports',
         severity: usedWithinOwnFile ? 'warning' : 'finding',
         file: file.relPath,
+        line: lineNumberAt(file.text, index),
         message: usedWithinOwnFile
           ? `"${name}" is only used within this file — the export looks unnecessary (nothing imports it).`
           : `"${name}" is exported but not referenced anywhere in the repo, not even within its own file — likely dead code.`,

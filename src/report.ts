@@ -13,4 +13,8 @@ export type Report = {
   filesScanned: number
   findings: Finding[]
   generatedAt: number
+  /** True if the scan hit MAX_FILES and stopped early — the report is a
+   *  partial view, not a complete one, and must say so rather than look
+   *  identical to a clean small repo. */
+  truncated: boolean
 }
