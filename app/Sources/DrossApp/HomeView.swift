@@ -72,6 +72,7 @@ struct HomeView: View {
             Text("Dross")
                 .font(.system(size: f(24), weight: .medium, design: .monospaced))
                 .foregroundStyle(Theme.ink)
+                .padding(.leading, f(8))
             Spacer()
             HStack(spacing: f(8)) {
                 Text("Activity").font(.system(size: f(16), weight: .medium, design: .monospaced)).foregroundStyle(Theme.ink)
