@@ -1,0 +1,19 @@
+{
+  "name": "shipcheck",
+  "version": "0.1.0",
+  "description": "Scans a repo before deploy and reports on dead code, contradictions, and contract drift between frontend and backend.",
+  "type": "module",
+  "bin": {
+    "shipcheck": "./dist/cli.js"
+  },
+  "scripts": {
+    "dev": "tsx src/cli.ts",
+    "build": "tsc -p tsconfig.json",
+    "test": "node --test --experimental-strip-types test/*.test.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}
