@@ -42,7 +42,7 @@ struct HomeView: View {
                 .font(.system(size: f(24), weight: .bold, design: .monospaced))
                 .foregroundStyle(Theme.ink)
                 .padding(.horizontal, f(39))
-                .padding(.top, f(18))
+                .padding(.top, f(34))
                 .padding(.bottom, f(20))
 
             HStack(alignment: .top, spacing: f(31)) {
