@@ -1,0 +1,4 @@
+{
+  "name": "ShipCheck",
+  "install": "npm ci"
+}
