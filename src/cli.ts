@@ -5,10 +5,10 @@ import { checkDeadExports } from './checks/deadExports.js'
 import type { Report } from './report.js'
 
 function printReport(report: Report) {
-  console.log(`\nSHIPCHECK · ${report.repoRoot}`)
+  console.log(`\nDROSS · ${report.repoRoot}`)
   console.log(`${report.filesScanned} files scanned · ${report.findings.length} findings`)
   if (report.truncated) {
-    console.log(`⚠ Stopped early at the file cap — this repo (or directory) is larger than a single scan covers. Point ShipCheck at a narrower path.`)
+    console.log(`⚠ Stopped early at the file cap — this repo (or directory) is larger than a single scan covers. Point Dross at a narrower path.`)
   }
   console.log('')
 

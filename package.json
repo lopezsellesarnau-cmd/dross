@@ -1,10 +1,10 @@
 {
-  "name": "shipcheck",
+  "name": "dross",
   "version": "0.1.0",
   "description": "Scans a repo before deploy and reports on dead code, contradictions, and contract drift between frontend and backend.",
   "type": "module",
   "bin": {
-    "shipcheck": "./dist/cli.js"
+    "dross": "./dist/cli.js"
   },
   "scripts": {
     "dev": "tsx src/cli.ts",

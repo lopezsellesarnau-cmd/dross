@@ -85,7 +85,7 @@ struct ContentView: View {
             }
             HalftoneMark(accentFraction: markAccentFraction)
                 .frame(width: 22, height: 22)
-            Text("SHIPCHECK")
+            Text("DROSS")
                 .font(.system(size: 13, weight: .semibold, design: .monospaced))
                 .tracking(2)
                 .foregroundStyle(Theme.ink)
@@ -143,7 +143,7 @@ struct ContentView: View {
                         .foregroundStyle(report.findings.isEmpty ? Theme.inkAlpha(0.55) : Theme.rust)
                 }
                 if report.truncated {
-                    Text("⚠ Stopped early at the file cap — this directory is larger than a single scan covers. Point ShipCheck at a narrower repo path, not a parent folder.")
+                    Text("⚠ Stopped early at the file cap — this directory is larger than a single scan covers. Point Dross at a narrower repo path, not a parent folder.")
                         .font(Theme.monoLabel(9.5))
                         .foregroundStyle(Theme.amberWarn)
                 }

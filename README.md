@@ -1,4 +1,4 @@
-# ShipCheck
+# Dross
 
 Scans a repo before you deploy it and reports on dead code, contradictions, and
 "contract drift" between frontend and backend — the bugs that look fine because
@@ -19,7 +19,7 @@ npm run dev -- /path/to/repo
 
 ## Architecture
 
-See the vault (`ShipCheck/00-overview.md`) for the full plan. Short version: this
+See the vault (`Dross/00-overview.md`) for the full plan. Short version: this
 CLI is the engine; a SwiftUI Mac app will shell out to a compiled version of it
 later. Deterministic checks (like this one) run free and instant; an LLM-backed
 semantic/drift-detection layer comes after the deterministic layer proves out.

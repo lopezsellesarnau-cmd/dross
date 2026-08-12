@@ -10,12 +10,12 @@ import Foundation
 enum Engine {
     static var enginePath: String {
         let appSourceFile = URL(fileURLWithPath: #filePath)
-        // shipcheck/app/Sources/ShipCheckApp/Engine.swift -> shipcheck/dist/cli.js
+        // dross/app/Sources/DrossApp/Engine.swift -> dross/dist/cli.js
         return appSourceFile
-            .deletingLastPathComponent() // ShipCheckApp/
+            .deletingLastPathComponent() // DrossApp/
             .deletingLastPathComponent() // Sources/
             .deletingLastPathComponent() // app/
-            .deletingLastPathComponent() // shipcheck/
+            .deletingLastPathComponent() // dross/
             .appendingPathComponent("dist/cli.js")
             .path
     }
@@ -38,7 +38,7 @@ enum Engine {
 
     static func scan(repoPath: String) throws -> ScanReport {
         guard FileManager.default.fileExists(atPath: enginePath) else {
-            throw EngineError(message: "Engine not found at \(enginePath) — run `npm run build` in the shipcheck repo first.")
+            throw EngineError(message: "Engine not found at \(enginePath) — run `npm run build` in the dross repo first.")
         }
 
         let process = Process()

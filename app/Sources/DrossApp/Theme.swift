@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Same house system as Aithority (terracotta) and TRACE (amber) — bone
 /// background, ink text, hairline borders, monospace uppercase labels.
-/// ShipCheck stays deliberately monochrome — red is the ONE exception,
+/// Dross stays deliberately monochrome — red is the ONE exception,
 /// reserved strictly for real findings (a "finding" severity), never used
 /// decoratively. "warning" severity (an unnecessary-but-harmless export,
 /// say) is a mid-ink gray, not a second accent color — there's exactly one

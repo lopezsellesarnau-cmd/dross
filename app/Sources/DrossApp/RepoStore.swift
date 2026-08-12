@@ -15,7 +15,7 @@ struct TrackedRepo: Identifiable, Codable {
     var history: [ScanSnapshot] = []
 }
 
-/// Persists the repos ShipCheck knows about, across launches, in
+/// Persists the repos Dross knows about, across launches, in
 /// UserDefaults (no server, no account — this is a local tool). Starts
 /// empty on first run, deliberately: seeding it with fake pre-scanned repos
 /// (the way the Figma mock shows Trace-app/Aithority/etc. already populated)
@@ -24,7 +24,7 @@ struct TrackedRepo: Identifiable, Codable {
 /// and scanned it.
 final class RepoStore: ObservableObject {
     @Published var repos: [TrackedRepo] = []
-    private let defaultsKey = "shipcheck.repos.v1"
+    private let defaultsKey = "dross.repos.v1"
 
     /// Every scan across every tracked repo, oldest first — what "code
     /// status" actually charts now: a real trend over time, not a

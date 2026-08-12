@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct ShipCheckApp: App {
+struct DrossApp: App {
     var body: some Scene {
         WindowGroup {
             RootView()

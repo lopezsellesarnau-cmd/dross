@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The multi-repo home screen from the Figma mock (ShipCheckApp1).
+/// The multi-repo home screen from the Figma mock (DrossApp1).
 ///
 /// Figma's frame is 1728pt wide; this window defaults to ~980pt. Using the
 /// mock's raw point values verbatim (an earlier pass) rendered everything
@@ -69,7 +69,7 @@ struct HomeView: View {
         HStack(spacing: f(14)) {
             HalftoneMark()
                 .frame(width: f(36), height: f(41))
-            Text("Shipcheck")
+            Text("Dross")
                 .font(.system(size: f(24), weight: .medium, design: .monospaced))
                 .foregroundStyle(Theme.ink)
             Spacer()

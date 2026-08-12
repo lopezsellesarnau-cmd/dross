@@ -2,11 +2,11 @@
 import PackageDescription
 
 let package = Package(
-    name: "ShipCheckApp",
+    name: "DrossApp",
     platforms: [.macOS(.v14)],
     targets: [
         .executableTarget(
-            name: "ShipCheckApp",
+            name: "DrossApp",
             resources: [.copy("Resources")]
         )
     ]
