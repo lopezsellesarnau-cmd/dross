@@ -466,9 +466,33 @@ export function checkContractDrift(files: SourceFile[]): Finding[] {
   return findings
 }
 
-export function summarizeDriftSurfaces(files: SourceFile[]): { server: string[]; client: string[] } {
+export type DriftRoute = {
+  method: string
+  path: string
+  file: string
+  line: number
+}
+
+export type DriftSurface = {
+  server: DriftRoute[]
+  client: DriftRoute[]
+}
+
+function toDriftRoutes(hits: RouteHit[]): DriftRoute[] {
+  const seen = new Set<string>()
+  const out: DriftRoute[] = []
+  for (const r of hits) {
+    const key = `${r.method} ${r.path} ${r.file}:${r.line}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push({ method: r.method, path: r.path, file: r.file, line: r.line })
+  }
+  return out
+}
+
+export function summarizeDriftSurfaces(files: SourceFile[]): DriftSurface {
   return {
-    server: [...new Set(extractServerRoutes(files).map((r) => `${r.method} ${r.path}`))],
-    client: [...new Set(extractClientCalls(files).map((r) => `${r.method} ${r.path}`))],
+    server: toDriftRoutes(extractServerRoutes(files)),
+    client: toDriftRoutes(extractClientCalls(files)),
   }
 }

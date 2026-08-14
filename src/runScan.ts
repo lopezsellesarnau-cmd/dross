@@ -37,14 +37,28 @@ export async function runScan(roots: string[]): Promise<Report> {
   // The LLM drift pass is the paid tier. It runs only when the user both
   // brings an Anthropic key AND holds a valid Pro license. Deterministic
   // checks above always run, free — the free/paid line per the product plan.
+  // LLM is a suppressor: it may drop low-confidence drift noise and add
+  // extras only for paths already on the extracted surface.
   let llmUsed = false
   let llmGated = false
   if (process.env.ANTHROPIC_API_KEY) {
     if (licenseStatus().valid) {
       const surface = summarizeDriftSurfaces(files)
-      const llmFindings = await judgeContractDrift(surface)
-      if (llmFindings.length) {
-        findings.push(...llmFindings)
+      const candidates = findings.filter(
+        (f) => f.check === 'contract-drift' && f.confidence === 'low',
+      )
+      const judged = await judgeContractDrift(surface, candidates)
+      if (judged.drop.length) {
+        const dropSet = new Set(judged.drop)
+        for (let i = findings.length - 1; i >= 0; i--) {
+          if (dropSet.has(findings[i])) findings.splice(i, 1)
+        }
+      }
+      for (const extra of judged.extra) {
+        extra.confidence = scoreConfidence(extra)
+        findings.push(extra)
+      }
+      if (judged.extra.length || judged.drop.length) {
         llmUsed = true
       } else if (surface.server.length && surface.client.length) {
         llmUsed = true
