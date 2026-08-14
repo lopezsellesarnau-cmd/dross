@@ -109,10 +109,20 @@ enum Engine {
             return VerifyResult(ok: true, message: "No tsconfig.json — skipped typecheck. Re-scan still ran.")
         }
 
+        // Global tsc first, repo-local node_modules/.bin/tsc only as a
+        // fallback — a repo-local binary is controlled by whatever that
+        // repo's package.json pulled in, so preferring it means Dross would
+        // execute attacker-controlled code from a repo it's merely scanning,
+        // with the user's full permissions and no sandbox (the same failure
+        // class as CodeRabbit's 2025 RCE, which ran a target repo's own
+        // Rubocop unsandboxed). Low real-world risk today since Dross only
+        // opens folders you already trusted enough to run `npm install` on
+        // — but cheap to close now, before "scan a repo before you trust it"
+        // becomes a real use case.
         let tscCandidates = [
-            (repoPath as NSString).appendingPathComponent("node_modules/.bin/tsc"),
             "/opt/homebrew/bin/tsc",
             "/usr/local/bin/tsc",
+            (repoPath as NSString).appendingPathComponent("node_modules/.bin/tsc"),
         ]
         guard let tsc = tscCandidates.first(where: { fm.isExecutableFile(atPath: $0) }) else {
             return VerifyResult(ok: true, message: "TypeScript compiler not found — skipped typecheck. Re-scan still ran.")
