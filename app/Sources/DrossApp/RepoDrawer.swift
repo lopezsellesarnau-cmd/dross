@@ -1,11 +1,8 @@
 import SwiftUI
 
-/// One compact stacked-folder icon per repo, in a vertical list — replaces
-/// the earlier wide single "drawer" (both the static-PNG version and the
-/// fully-procedural wide version): simpler, and the stack depth is real —
-/// it's the repo's actual top-level file count (capped for legibility),
-/// not a decorative constant. "+ open repo" is the first item in the list,
-/// styled the same way but empty (dashed, one sheet).
+/// Stacked-folder tiles in a wrapping grid — fill the workspace left-to-right,
+/// then wrap. Stack depth is the repo's top-level file count (capped).
+/// "+ open repo" is the first tile (dashed, one sheet).
 struct RepoStackListView: View {
     let repos: [TrackedRepo]
     var onSelect: (TrackedRepo) -> Void
@@ -17,20 +14,30 @@ struct RepoStackListView: View {
     /// "opaque folder" fix leaves a seam around its edge.
     var backgroundColor: Color = Theme.bone
 
+    private var tileMin: CGFloat {
+        max(140, 200 * scale) + 6 * max(2, 3 * scale)
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: max(24, 40 * scale)) {
+        let columns = [
+            GridItem(.adaptive(minimum: tileMin), spacing: max(28, 40 * scale), alignment: .topLeading)
+        ]
+        LazyVGrid(columns: columns, alignment: .leading, spacing: max(28, 40 * scale)) {
             Button(action: onAddRepo) {
                 FolderStack(label: "+ open repo", depth: 1, isAdd: true, scale: scale, backgroundColor: backgroundColor)
             }
             .buttonStyle(.plain)
+            .contentShape(Rectangle())
 
             ForEach(repos) { repo in
                 Button(action: { onSelect(repo) }) {
                     FolderStack(label: repo.name, depth: fileDepth(for: repo), isAdd: false, scale: scale, backgroundColor: backgroundColor)
                 }
                 .buttonStyle(.plain)
+                .contentShape(Rectangle())
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// Real signal, not decoration: how many top-level files/folders this
@@ -45,26 +52,41 @@ struct RepoStackListView: View {
     }
 }
 
-private struct FolderStack: View {
+struct FolderStack: View {
     let label: String
     let depth: Int
     let isAdd: Bool
     let scale: CGFloat
     let backgroundColor: Color
+    /// When set, the whole stack (front + offset sheets) fills this width.
+    var fitWidth: CGFloat? = nil
 
-    private var cardWidth: CGFloat { max(140, 200 * scale) }
+    private var layerOffsetY: CGFloat { max(7, 11 * scale) }
+    private var layerOffsetX: CGFloat { max(2, 3 * scale) }
+
+    private var cardWidth: CGFloat {
+        if let fitWidth {
+            let layers = CGFloat(max(depth - 1, 0))
+            return max(72, fitWidth - layers * layerOffsetX)
+        }
+        return max(140, 200 * scale)
+    }
     private var cardHeight: CGFloat { cardWidth * (179.0 / 241.0) }
-    private var layerOffset: CGFloat { max(5, 8 * scale) }
 
     var body: some View {
-        let totalWidth = cardWidth + CGFloat(depth - 1) * layerOffset
+        let layers = max(depth - 1, 0)
+        let totalWidth = cardWidth + CGFloat(layers) * layerOffsetX
+        let totalHeight = cardHeight + CGFloat(layers) * layerOffsetY
 
-        ZStack(alignment: .bottomTrailing) {
-            ForEach(0..<max(depth - 1, 0), id: \.self) { i in
-                FolderShape()
-                    .stroke(Theme.inkAlpha(0.45), lineWidth: 1)
-                    .frame(width: cardWidth, height: cardHeight)
-                    .offset(x: CGFloat(i) * layerOffset)
+        ZStack(alignment: .topLeading) {
+            ForEach(0..<layers, id: \.self) { i in
+                ZStack {
+                    FolderShape().fill(backgroundColor)
+                    FolderShape()
+                        .stroke(Theme.ink, lineWidth: max(1, 1.2 * scale))
+                }
+                .frame(width: cardWidth, height: cardHeight)
+                .offset(x: CGFloat(i) * layerOffsetX, y: CGFloat(i) * layerOffsetY)
             }
 
             ZStack {
@@ -81,19 +103,37 @@ private struct FolderStack: View {
                     .font(.system(size: max(10, 15 * scale), weight: .medium, design: .monospaced))
                     .foregroundStyle(isAdd ? Theme.inkAlpha(0.55) : Theme.ink)
                     .lineLimit(1)
+                    // Render the name at full width (no "…") anchored to the
+                    // right, then fade it out toward the folder's left edge so
+                    // long repo names dissolve instead of hard-truncating.
+                    .fixedSize(horizontal: true, vertical: false)
+                    .frame(maxWidth: cardWidth - 20, alignment: .trailing)
+                    .mask(
+                        LinearGradient(
+                            stops: [
+                                .init(color: .clear, location: 0.0),
+                                .init(color: .black, location: 0.22),
+                                .init(color: .black, location: 1.0),
+                            ],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
                     .padding(.trailing, 10)
                     .padding(.bottom, 8)
             }
-            .offset(x: CGFloat(max(depth - 1, 0)) * layerOffset)
+            .offset(x: CGFloat(layers) * layerOffsetX, y: CGFloat(layers) * layerOffsetY)
         }
-        .frame(width: totalWidth, height: cardHeight, alignment: .topLeading)
+        .frame(width: totalWidth, height: totalHeight, alignment: .topLeading)
+        // Whole folder bounds are clickable — not just the stroked edge.
+        .contentShape(Rectangle())
     }
 }
 
 /// An actual folder silhouette — a body with a smaller tab notch cut into
 /// the top-left edge, the classic file-folder icon language — not a plain
 /// rounded rectangle, which reads as "a box," not "a folder."
-private struct FolderShape: Shape {
+struct FolderShape: Shape {
     func path(in rect: CGRect) -> Path {
         let r: CGFloat = 6
         let tabWidth = rect.width * 0.42

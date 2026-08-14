@@ -9,7 +9,8 @@ struct CodePreviewView: View {
     var onClose: () -> Void
 
     private var lines: [(number: Int, text: String)] {
-        let fullPath = (repoRoot as NSString).appendingPathComponent(finding.file)
+        let fullPath = Engine.resolveSource(repoPath: repoRoot, file: finding.file)?.abs
+            ?? (repoRoot as NSString).appendingPathComponent(finding.file)
         guard let content = try? String(contentsOfFile: fullPath, encoding: .utf8) else { return [] }
         let allLines = content.components(separatedBy: "\n")
         let target = (finding.line ?? 1)
@@ -29,12 +30,12 @@ struct CodePreviewView: View {
                 }
                 Spacer()
                 Button(action: onClose) {
-                    Text("CLOSE").font(Theme.monoLabel(9.5)).foregroundStyle(Theme.inkAlpha(0.5))
+                    Text("[ CLOSE ]").font(Theme.monoLabel(9.5)).tracking(0.8).foregroundStyle(Theme.inkAlpha(0.5))
                 }
                 .buttonStyle(.plain)
             }
             .padding(12)
-            Divider().overlay(Theme.inkAlpha(0.18))
+            Rectangle().fill(Theme.hair).frame(height: 1)
 
             if lines.isEmpty {
                 Text("Couldn't read this file from disk.")
@@ -64,9 +65,14 @@ struct CodePreviewView: View {
                     }
                     .padding(.vertical, 8)
                 }
+                .hideScrollChrome()
             }
         }
-        .background(Theme.bone)
-        .overlay(Rectangle().stroke(Theme.inkAlpha(0.18), lineWidth: 1))
+        .background(pageBackground)
+        .overlay(Rectangle().stroke(Theme.line, lineWidth: 1))
+    }
+
+    private var pageBackground: Color {
+        Theme.bone
     }
 }

@@ -26,22 +26,34 @@ final class RepoStore: ObservableObject {
     @Published var repos: [TrackedRepo] = []
     private let defaultsKey = "dross.repos.v1"
 
-    /// Every scan across every tracked repo, oldest first — what "code
-    /// status" actually charts now: a real trend over time, not a
-    /// per-file snapshot of the last run.
+    /// Every meaningful scan across every tracked repo, oldest first —
+    /// only points where the findings count moved (or the first scan).
     var combinedHistory: [ScanSnapshot] {
         repos.flatMap(\.history).sorted { $0.timestamp < $1.timestamp }
     }
 
     init() { load() }
 
+    func report(for path: String) -> ScanReport? {
+        repos.first(where: { $0.path == path })?.lastReport
+    }
+
+    /// Updates the cached report. Appends a history bar only when the
+    /// findings count actually changes — reopening / re-scanning the same
+    /// state must not invent a new "Code status" sample. When a fix lands
+    /// and findings drop, the new lower bar is what charts the improvement.
     func upsert(path: String, report: ScanReport) {
         let name = (path as NSString).lastPathComponent
-        let snapshot = ScanSnapshot(timestamp: report.generatedAt, findingsCount: report.findings.count)
+        let snapshot = ScanSnapshot(timestamp: report.generatedAt, findingsCount: report.openCount)
         if let idx = repos.firstIndex(where: { $0.path == path }) {
+            let previousCount = repos[idx].history.last?.findingsCount
             repos[idx].lastReport = report
-            repos[idx].history.append(snapshot)
-            if repos[idx].history.count > 30 { repos[idx].history.removeFirst(repos[idx].history.count - 30) }
+            if previousCount != snapshot.findingsCount {
+                repos[idx].history.append(snapshot)
+                if repos[idx].history.count > 30 {
+                    repos[idx].history.removeFirst(repos[idx].history.count - 30)
+                }
+            }
         } else {
             repos.append(TrackedRepo(name: name, path: path, lastReport: report, history: [snapshot]))
         }
@@ -55,7 +67,21 @@ final class RepoStore: ObservableObject {
 
     private func load() {
         guard let data = UserDefaults.standard.data(forKey: defaultsKey),
-              let decoded = try? JSONDecoder().decode([TrackedRepo].self, from: data) else { return }
+              var decoded = try? JSONDecoder().decode([TrackedRepo].self, from: data) else { return }
+        // Collapse consecutive duplicate findings counts left by older builds
+        // that appended a bar on every open.
+        for i in decoded.indices {
+            decoded[i].history = Self.collapseHistory(decoded[i].history)
+        }
         repos = decoded
+    }
+
+    private static func collapseHistory(_ history: [ScanSnapshot]) -> [ScanSnapshot] {
+        var out: [ScanSnapshot] = []
+        for snap in history {
+            if out.last?.findingsCount == snap.findingsCount { continue }
+            out.append(snap)
+        }
+        return out
     }
 }
