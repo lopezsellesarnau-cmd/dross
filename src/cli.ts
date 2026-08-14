@@ -13,6 +13,12 @@ import {
   fingerprint,
   type AnnotatedFinding,
 } from './memory.js'
+import {
+  activateLicense,
+  deactivateLicense,
+  licenseStatus,
+  licenseFilePath,
+} from './license.js'
 import type { FixHint, Report } from './report.js'
 
 function printHelp() {
@@ -30,12 +36,34 @@ Usage:
       Remember this finding as accepted — muted findings do not fail CI.
   dross unmute <repo> <file> <line>
       Forget a mute. Next scan treats the finding as open again.
+  dross license [--check]        Show license status.
+  dross license activate <key>   Store a Pro license (unlocks LLM drift pass).
+  dross license deactivate       Remove the stored license.
   dross --help
+
+The LLM semantic-drift pass (Pro) needs BOTH a valid license and an
+ANTHROPIC_API_KEY. Deterministic checks are always free.
 
 CI examples:
   npx dross scan . --json
   npx dross scan ./trace-app --also ./trace-backend --json
+  DROSS_LICENSE_KEY=... ANTHROPIC_API_KEY=... npx dross scan . --json
 `)
+}
+
+function printLicenseStatus(asJson: boolean) {
+  const s = licenseStatus()
+  if (asJson) {
+    console.log(JSON.stringify(s))
+    return
+  }
+  if (s.valid) {
+    const exp = s.expiresAt ? new Date(s.expiresAt).toISOString().slice(0, 10) : 'perpetual'
+    console.log(`\nDROSS · license: ✓ ${s.plan ?? 'pro'} — ${s.email ?? 'unknown'} (${exp})\n`)
+  } else {
+    console.log(`\nDROSS · license: ✗ ${s.reason ?? 'not licensed'}`)
+    console.log(`Free tier active (deterministic checks). Set DROSS_LICENSE_KEY or run \`dross license activate <key>\`.\n`)
+  }
 }
 
 function printReport(report: Report, annotated: AnnotatedFinding[]) {
@@ -44,6 +72,7 @@ function printReport(report: Report, annotated: AnnotatedFinding[]) {
   console.log(`\nDROSS · ${report.repoRoot}`)
   console.log(`${report.filesScanned} files scanned · ${open} findings`)
   if (report.llmUsed) console.log(`LLM drift pass: on`)
+  if (report.llmGated) console.log(`LLM drift pass: locked — Pro license required (\`dross license activate <key>\`)`)
   if (report.truncated) {
     console.log(`⚠ Stopped early at the file cap — this repo (or directory) is larger than a single scan covers. Point Dross at a narrower path.`)
   }
@@ -146,6 +175,34 @@ async function main() {
     if (asJson) console.log(JSON.stringify(result))
     else console.log(result.ok ? `✓ ${result.message}` : `✗ ${result.message}`)
     process.exitCode = result.ok ? 0 : 1
+    return
+  }
+
+  // dross license [--check | activate <key> | deactivate]
+  if (rest[0] === 'license') {
+    const sub = rest[1]
+    if (sub === 'activate') {
+      const key = rest[2]
+      if (!key) {
+        console.error('Usage: dross license activate <key>')
+        process.exitCode = 2
+        return
+      }
+      const status = activateLicense(key)
+      if (asJson) console.log(JSON.stringify(status))
+      else if (status.valid) console.log(`✓ Activated — ${status.plan ?? 'pro'} for ${status.email ?? 'unknown'}. Stored at ${licenseFilePath()}`)
+      else console.log(`✗ ${status.reason ?? 'invalid license'} — nothing stored.`)
+      process.exitCode = status.valid ? 0 : 1
+      return
+    }
+    if (sub === 'deactivate') {
+      deactivateLicense()
+      if (asJson) console.log(JSON.stringify({ ok: true }))
+      else console.log(`✓ License removed (${licenseFilePath()}).`)
+      return
+    }
+    // default / --check
+    printLicenseStatus(asJson)
     return
   }
 

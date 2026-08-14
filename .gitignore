@@ -7,3 +7,7 @@ dist/
 dist-release/
 app/.build/
 *.dmg
+
+# License signing secret — NEVER commit. Back this up outside the repo.
+license-private.pem
+*-private.pem

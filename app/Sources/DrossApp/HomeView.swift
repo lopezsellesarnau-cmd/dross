@@ -16,6 +16,8 @@ struct HomeView: View {
 
     @State private var query = ""
     @State private var engineReady = true
+    @StateObject private var license = LicenseStore()
+    @State private var showLicense = false
 
     private let homeBackground = Theme.bone
     private let figmaDesignWidth: CGFloat = 1728
@@ -34,6 +36,10 @@ struct HomeView: View {
         .frame(minWidth: 980, minHeight: 700)
         .onAppear {
             engineReady = FileManager.default.fileExists(atPath: Engine.enginePath)
+            license.refresh()
+        }
+        .sheet(isPresented: $showLicense) {
+            LicenseView(license: license, onClose: { showLicense = false })
         }
     }
 
@@ -124,6 +130,13 @@ struct HomeView: View {
                 .tracking(1.2)
                 .foregroundStyle(Theme.ink)
             InkBadge(text: "Local", scale: scale)
+            Button(action: { showLicense = true }) {
+                Text(license.isPro ? "PRO" : "FREE · UPGRADE")
+                    .font(.system(size: f(10), weight: .medium, design: .monospaced))
+                    .tracking(1.3)
+                    .foregroundStyle(license.isPro ? Theme.ok : Theme.rust)
+            }
+            .buttonStyle(.plain)
             Button(action: pickFolder) {
                 Text("OPEN")
                     .font(.system(size: f(10), weight: .medium, design: .monospaced))

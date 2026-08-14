@@ -19,6 +19,27 @@ enum Engine {
         let message: String
     }
 
+    struct LicenseStatus: Codable {
+        let valid: Bool
+        let plan: String?
+        let email: String?
+        let expiresAt: Double?
+        let reason: String?
+        let source: String?
+
+        static let none = LicenseStatus(valid: false, plan: nil, email: nil, expiresAt: nil, reason: "Not licensed", source: "none")
+    }
+
+    /// UserDefaults key for the user's own Anthropic API key (BYO-key model).
+    /// Forwarded to the engine only for `scan`; the engine still gates the LLM
+    /// pass on a valid license, so a stored key alone unlocks nothing.
+    static let anthropicKeyDefaultsKey = "dross.anthropicKey"
+
+    private static func storedAnthropicKey() -> String? {
+        let k = UserDefaults.standard.string(forKey: anthropicKeyDefaultsKey)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (k?.isEmpty == false) ? k : nil
+    }
+
     /// Hard ceiling so a hung Node process can't leave the UI spinning forever.
     private static let maxRuntime: TimeInterval = 90
     /// Only one Node engine at a time — overlapping Re-scans were racing and
@@ -52,13 +73,43 @@ enum Engine {
     }
 
     static func scan(repoPath: String) throws -> ScanReport {
-        let outData = try runEngine(arguments: [enginePath, repoPath, "--json"])
+        // Forward the user's own Anthropic key (if set). The engine runs the
+        // LLM pass only when a valid Pro license is also present — so free
+        // users never pay the LLM latency, and unlicensed keys unlock nothing.
+        var extraEnv: [String: String] = [:]
+        if let key = storedAnthropicKey() { extraEnv["ANTHROPIC_API_KEY"] = key }
+        let outData = try runEngine(arguments: [enginePath, repoPath, "--json"], extraEnv: extraEnv)
         do {
             return try JSONDecoder().decode(ScanReport.self, from: outData)
         } catch {
             let preview = String(data: outData.prefix(240), encoding: .utf8) ?? "<binary>"
             throw EngineError(message: "Engine produced unparseable scan output.\n\(preview)")
         }
+    }
+
+    // MARK: License
+
+    static func licenseStatus() -> LicenseStatus {
+        guard let data = try? runEngine(arguments: [enginePath, "license", "--check", "--json"]) else {
+            return .none
+        }
+        return (try? JSONDecoder().decode(LicenseStatus.self, from: data)) ?? .none
+    }
+
+    @discardableResult
+    static func activateLicense(_ key: String) -> LicenseStatus {
+        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty,
+              let data = try? runEngine(arguments: [enginePath, "license", "activate", trimmed, "--json"]),
+              let status = try? JSONDecoder().decode(LicenseStatus.self, from: data)
+        else {
+            return LicenseStatus(valid: false, plan: nil, email: nil, expiresAt: nil, reason: "Could not activate — check the key.", source: nil)
+        }
+        return status
+    }
+
+    static func deactivateLicense() {
+        _ = try? runEngine(arguments: [enginePath, "license", "deactivate", "--json"])
     }
 
     /// Persist a mute in `<repo>/.dross/memory.json` via the CLI.
@@ -274,7 +325,7 @@ enum Engine {
         NSWorkspace.shared.open(URL(fileURLWithPath: abs))
     }
 
-    private static func runEngine(arguments: [String]) throws -> Data {
+    private static func runEngine(arguments: [String], extraEnv: [String: String] = [:]) throws -> Data {
         engineLock.lock()
         defer { engineLock.unlock() }
 
@@ -299,8 +350,10 @@ enum Engine {
             env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
         }
         // Never inherit a shell ANTHROPIC key into GUI scans — an LLM hang
-        // looked like a flaky 90s Re-scan timeout.
+        // looked like a flaky 90s Re-scan timeout. Callers opt in explicitly
+        // via extraEnv (scan forwards the user's stored key when set).
         env.removeValue(forKey: "ANTHROPIC_API_KEY")
+        for (k, v) in extraEnv { env[k] = v }
         process.environment = env
 
         // Don't inherit the app's stdin — Node can block waiting for it from a GUI.

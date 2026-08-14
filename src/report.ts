@@ -27,5 +27,8 @@ export type Report = {
   truncated: boolean
   /** True when the optional LLM drift pass ran (needs ANTHROPIC_API_KEY). */
   llmUsed?: boolean
+  /** True when an Anthropic key was present but the LLM pass was withheld
+   *  because there's no valid Pro license — the paid upgrade prompt. */
+  llmGated?: boolean
 }
 

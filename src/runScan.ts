@@ -6,6 +6,7 @@ import { checkHardcodedDemo } from './checks/hardcodedDemo.js'
 import { checkEnvDrift } from './checks/envDrift.js'
 import { judgeContractDrift } from './llm/driftJudge.js'
 import { scoreConfidence } from './confidence.js'
+import { licenseStatus } from './license.js'
 import type { Report } from './report.js'
 
 /**
@@ -33,15 +34,24 @@ export async function runScan(roots: string[]): Promise<Report> {
     f.confidence = scoreConfidence(f)
   }
 
+  // The LLM drift pass is the paid tier. It runs only when the user both
+  // brings an Anthropic key AND holds a valid Pro license. Deterministic
+  // checks above always run, free — the free/paid line per the product plan.
   let llmUsed = false
+  let llmGated = false
   if (process.env.ANTHROPIC_API_KEY) {
-    const surface = summarizeDriftSurfaces(files)
-    const llmFindings = await judgeContractDrift(surface)
-    if (llmFindings.length) {
-      findings.push(...llmFindings)
-      llmUsed = true
-    } else if (surface.server.length && surface.client.length) {
-      llmUsed = true
+    if (licenseStatus().valid) {
+      const surface = summarizeDriftSurfaces(files)
+      const llmFindings = await judgeContractDrift(surface)
+      if (llmFindings.length) {
+        findings.push(...llmFindings)
+        llmUsed = true
+      } else if (surface.server.length && surface.client.length) {
+        llmUsed = true
+      }
+    } else {
+      // Key present but unlicensed — tell the caller so it can prompt to upgrade.
+      llmGated = true
     }
   }
 
@@ -54,5 +64,6 @@ export async function runScan(roots: string[]): Promise<Report> {
     generatedAt: Date.now(),
     truncated,
     llmUsed,
+    llmGated,
   }
 }

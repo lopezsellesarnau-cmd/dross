@@ -43,7 +43,45 @@ GitHub Actions sketch:
 # or: npx dross scan ./apps/mobile --also ./services/api --json
 ```
 
-Optional LLM drift pass: set `ANTHROPIC_API_KEY`.
+## Free vs Pro
+
+Deterministic checks (dead-exports, contract-drift, env-drift, todo-density,
+hardcoded-demo) are **always free** and run fully offline. The **LLM semantic
+drift pass** is the **Pro** tier and runs only when BOTH are present:
+
+1. a valid Pro license, and
+2. your own Anthropic key (`ANTHROPIC_API_KEY`) — bring-your-own-key; Dross
+   never proxies or resells tokens.
+
+```bash
+# Check / manage a license (stored at ~/.dross/license)
+npx dross license                 # status
+npx dross license activate <key>  # verify + store
+npx dross license deactivate
+
+# CI: license via env, no file needed
+DROSS_LICENSE_KEY=<key> ANTHROPIC_API_KEY=<key> npx dross scan . --json
+```
+
+In the Mac app, use the **FREE · UPGRADE / PRO** button in the home header to
+enter a license key and your Anthropic key.
+
+Licenses are Ed25519-signed and verified offline (embedded public key) — no
+activation server. If an Anthropic key is set but there's no valid license, the
+scan reports `llmGated: true` and the deterministic checks still run.
+
+### Issuing licenses (maintainer)
+
+```bash
+node scripts/license-keypair.mjs          # once: writes license-private.pem (gitignored), prints public key
+# paste the public key into EMBEDDED_PUBLIC_KEY in src/license.ts
+npm run build
+node scripts/mint-license.mjs buyer@example.com pro           # perpetual
+node scripts/mint-license.mjs buyer@example.com pro --days 365 # subscription
+```
+
+Keep `license-private.pem` secret and backed up outside the repo — losing it
+means re-keying (invalidates all issued licenses); leaking it lets anyone mint.
 
 ## Mac app
 
