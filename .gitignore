@@ -1,3 +1,9 @@
 node_modules/
 dist/
 *.log
+.dross/
+
+# Release/build artifacts (regenerable via scripts/package-dmg.sh + rebuild.sh)
+dist-release/
+app/.build/
+*.dmg
