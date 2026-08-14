@@ -1,0 +1,4 @@
+{
+  "description": "Route/fetch patterns appear only INSIDE string literals (prose docs). They are not real calls, so a parser must ignore them. Regex over source text invents a phantom client call → false positive. Expect ZERO findings.",
+  "expected": []
+}

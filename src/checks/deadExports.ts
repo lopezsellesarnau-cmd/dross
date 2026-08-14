@@ -1,5 +1,6 @@
 import type { SourceFile } from '../scan.js'
 import type { Finding } from '../report.js'
+import { stripComments } from '../stripComments.js'
 
 /**
  * Heuristic, not full AST: regex-extracts named exports and greps for the
@@ -31,8 +32,10 @@ const EXPORT_PATTERNS = [
   /export\s+class\s+([A-Za-z_$][\w$]*)/g,
 ]
 
-// `export { a, b as c }` — captures the whole brace group, split separately.
-const EXPORT_LIST_PATTERN = /export\s*\{([^}]+)\}\s*(?:from\s+['"][^'"]+['"])?/g
+// `export { a, b as c }` — one line, identifier-only parts (avoids matching
+// `export {` inside regex/string examples that later close with an unrelated `}`).
+const EXPORT_LIST_PATTERN =
+  /(?:^|[;\n])\s*export\s*\{\s*([A-Za-z_$][\w$\s,]*(?:\s+as\s+[A-Za-z_$][\w$]*)?(?:\s*,\s*[A-Za-z_$][\w$\s]*(?:\s+as\s+[A-Za-z_$][\w$]*)?)*)\s*\}\s*(?:from\s+['"][^'"]+['"])?/gm
 
 type ExportedName = { name: string; index: number }
 
@@ -114,9 +117,11 @@ export function checkDeadExports(files: SourceFile[]): Finding[] {
     // check is for — skip to cut a common noise source.
     if (/\.(test|spec)\.[jt]sx?$/.test(file.relPath)) continue
 
-    const exported = extractExportedNames(file.text)
+    const code = stripComments(file.text)
+    const exported = extractExportedNames(code)
     for (const { name, index } of exported) {
-      if (name.length <= 2) continue // too short to grep reliably without false negatives eating the signal
+      // Identifiers only — reject junk from malformed regex hits.
+      if (!/^[A-Za-z_$][\w$]*$/.test(name) || name.length <= 2) continue
 
       const usedElsewhere = files.some(
         (other) => other.absPath !== file.absPath && (tokensByFile.get(other.absPath)?.get(name) ?? 0) > 0,
@@ -135,10 +140,12 @@ export function checkDeadExports(files: SourceFile[]): Finding[] {
         check: 'dead-exports',
         severity: usedWithinOwnFile ? 'warning' : 'finding',
         file: file.relPath,
-        line: lineNumberAt(file.text, index),
+        line: lineNumberAt(code, index),
         message: usedWithinOwnFile
           ? `"${name}" is only used within this file — the export looks unnecessary (nothing imports it).`
           : `"${name}" is exported but not referenced anywhere in the repo, not even within its own file — likely dead code.`,
+        // Fully unused → delete declaration. Local-only export → strip keyword.
+        fixHint: usedWithinOwnFile ? 'remove-export' : 'delete-dead',
       })
     }
   }

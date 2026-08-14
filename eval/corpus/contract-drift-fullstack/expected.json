@@ -1,0 +1,7 @@
+{
+  "description": "Real full-stack drift: the client still calls POST /api/scan, but the server renamed it to /api/scanReport. /api/health matches on both sides (so the client tree IS present). Expect two symptoms: an orphan client call and an orphan server route.",
+  "expected": [
+    { "check": "contract-drift", "file": "app/client.ts", "note": "client calls /api/scan, no server route" },
+    { "check": "contract-drift", "file": "api/server.ts", "note": "server serves /api/scanReport, no client" }
+  ]
+}

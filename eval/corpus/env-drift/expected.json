@@ -1,0 +1,6 @@
+{
+  "description": "API_URL is read but missing from .env.example → env-drift. PORT is also read but is injected by hosts (Render/Heroku) and must NOT be flagged (negative control).",
+  "expected": [
+    { "check": "env-drift", "file": "config.ts", "note": "API_URL missing; PORT correctly ignored" }
+  ]
+}

@@ -1,0 +1,4 @@
+{
+  "description": "A small, fully-wired module. Nothing is wrong — the engine must stay silent (guards against false positives on clean code).",
+  "expected": []
+}

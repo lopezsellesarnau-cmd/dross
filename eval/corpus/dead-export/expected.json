@@ -1,0 +1,6 @@
+{
+  "description": "unusedHelper is exported but referenced nowhere (usedHelper is used by main). Expect exactly one dead-export; usedHelper must NOT be flagged.",
+  "expected": [
+    { "check": "dead-exports", "file": "helpers.ts", "note": "unusedHelper" }
+  ]
+}

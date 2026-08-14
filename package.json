@@ -9,11 +9,12 @@
   "scripts": {
     "dev": "tsx src/cli.ts",
     "build": "tsc -p tsconfig.json",
-    "test": "node --test --experimental-strip-types test/*.test.ts"
+    "test": "tsx --test test/*.test.ts",
+    "eval": "tsx eval/run.ts"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
     "tsx": "^4.19.2",
-    "typescript": "^5.7.2"
+    "typescript": "^5.9.3"
   }
 }

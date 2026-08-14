@@ -1,0 +1,6 @@
+{
+  "description": "A real you@example.com baked into data.ts → hardcoded-demo. The identical string inside placeholder=\"…\" in app.tsx is UI chrome and must NOT be flagged (negative control).",
+  "expected": [
+    { "check": "hardcoded-demo", "file": "data.ts", "note": "example.com email in shipped data" }
+  ]
+}

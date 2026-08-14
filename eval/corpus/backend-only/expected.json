@@ -1,0 +1,4 @@
+{
+  "description": "Backend scanned ALONE (aithority regression). Its only 'client' calls are an outbound third-party API (${GRAPH_BASE}) and a localhost demo script — neither is the real frontend. Must produce ZERO contract-drift: you can't call a route dead just because this repo has no caller.",
+  "expected": []
+}
