@@ -1,8 +1,13 @@
 # Dross
 
-Scans a repo before you deploy and reports dead code, contradictions, and
-**contract drift** between frontend and backend — bugs that look fine because
-they're meaning errors, not syntax errors.
+Dross catches **contract drift** — when your frontend and backend quietly stop
+agreeing — before it reaches `main`. Deterministic checks, not an LLM
+re-reading your LLM's code, across every project your team is juggling.
+Nothing leaves your machine, which matters the moment your data touches
+something confidential.
+
+*(It also catches dead exports, hardcoded demo data, and env-file gaps along
+the way.)*
 
 ## Status
 
