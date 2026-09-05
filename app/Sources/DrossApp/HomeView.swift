@@ -64,7 +64,6 @@ struct HomeView: View {
                     onSelectRepo: { onOpenRepo($0.path) }
                 )
                 .frame(width: f(240))
-                .padding(.horizontal, f(12))
 
                 Rectangle().fill(Theme.ink).frame(width: 1)
 
@@ -91,17 +90,15 @@ struct HomeView: View {
                     }
                     .hideScrollChrome()
                 }
-                .padding(.leading, f(22))
-                .padding(.trailing, f(16))
-                .padding(.top, f(18))
-                .padding(.bottom, f(22))
+                .padding(.leading, f(28))
+                .padding(.trailing, f(28))
+                .padding(.top, f(24))
+                .padding(.bottom, f(28))
 
                 Rectangle().fill(Theme.ink).frame(width: 1)
 
                 HomeAssistRail(scale: scale, onAddRepo: pickFolder)
                     .frame(width: f(220))
-                    .padding(.leading, f(14))
-                    .padding(.top, f(18))
 
                 SpineLabel(text: "Limitations: none registered", scale: scale)
                     .frame(width: f(28))

@@ -14,24 +14,30 @@ struct RepoStackListView: View {
     /// "opaque folder" fix leaves a seam around its edge.
     var backgroundColor: Color = Theme.bone
 
+    /// Smaller than FolderStack's shared default (`max(140, 200 * scale)`,
+    /// still used by the Welcome screen) — `fitWidth` sizes these tiles
+    /// independently so shrinking the dashboard grid can't affect Welcome.
+    private var tileWidth: CGFloat {
+        max(120, 158 * scale)
+    }
     private var tileMin: CGFloat {
-        max(140, 200 * scale) + 6 * max(2, 3 * scale)
+        tileWidth + 6 * max(2, 3 * scale)
     }
 
     var body: some View {
         let columns = [
-            GridItem(.adaptive(minimum: tileMin), spacing: max(28, 40 * scale), alignment: .topLeading)
+            GridItem(.adaptive(minimum: tileMin), spacing: max(36, 48 * scale), alignment: .topLeading)
         ]
-        LazyVGrid(columns: columns, alignment: .leading, spacing: max(28, 40 * scale)) {
+        LazyVGrid(columns: columns, alignment: .leading, spacing: max(36, 48 * scale)) {
             Button(action: onAddRepo) {
-                FolderStack(label: "+ open repo", depth: 1, isAdd: true, scale: scale, backgroundColor: backgroundColor)
+                FolderStack(label: "+ open repo", depth: 1, isAdd: true, scale: scale, backgroundColor: backgroundColor, fitWidth: tileWidth)
             }
             .buttonStyle(.plain)
             .contentShape(Rectangle())
 
             ForEach(repos) { repo in
                 Button(action: { onSelect(repo) }) {
-                    FolderStack(label: repo.name, depth: fileDepth(for: repo), isAdd: false, scale: scale, backgroundColor: backgroundColor)
+                    FolderStack(label: repo.name, depth: fileDepth(for: repo), isAdd: false, scale: scale, backgroundColor: backgroundColor, fitWidth: tileWidth)
                 }
                 .buttonStyle(.plain)
                 .contentShape(Rectangle())

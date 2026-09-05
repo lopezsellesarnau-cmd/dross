@@ -21,14 +21,15 @@ struct PreviewsSidebar: View {
 
     var body: some View {
         GeometryReader { geo in
-            let inset = f(12)
+            let inset = f(16)
             let innerW = max(0, geo.size.width - inset * 2)
             VStack(alignment: .leading, spacing: 0) {
                 Text("Preview")
                     .font(Theme.sectionLabel(f(9.5)))
                     .tracking(1.6)
                     .foregroundStyle(Theme.inkAlpha(0.5))
-                    .padding(.bottom, f(14))
+                    .padding(.bottom, f(18))
+                    .padding(.top, f(20))
 
                 Rectangle().fill(Theme.hair).frame(height: 1)
 
@@ -68,6 +69,7 @@ struct PreviewsSidebar: View {
                     .padding(.top, f(14))
             }
             .padding(.horizontal, inset)
+            .padding(.bottom, inset)
             .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -129,15 +131,8 @@ struct PreviewsSidebar: View {
                         .font(.system(size: f(10), weight: .medium, design: .default))
                         .foregroundStyle(Theme.rust)
                 }
-
-                ForEach(Array(findings.prefix(2))) { finding in
-                    Text(finding.line.map { "\(finding.file):\($0)" } ?? finding.file)
-                        .font(.system(size: f(10), design: .monospaced))
-                        .foregroundStyle(Theme.inkAlpha(0.5))
-                        .lineLimit(1)
-                }
             }
-            .padding(.vertical, f(16))
+            .padding(.vertical, f(20))
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
         }
@@ -147,53 +142,26 @@ struct PreviewsSidebar: View {
 
     private var codeStatusSection: some View {
         let history = store.combinedHistory
-        return VStack(alignment: .leading, spacing: f(12)) {
-            Text(history.isEmpty ? "Code status" : "Code status · \(trendLabel(history))")
+        let last = history.last?.findingsCount
+        return VStack(alignment: .leading, spacing: f(8)) {
+            Text("Code status")
                 .font(Theme.sectionLabel(f(9.5)))
                 .tracking(1.4)
                 .foregroundStyle(Theme.inkAlpha(0.5))
+                .lineLimit(1)
 
-            if history.isEmpty {
-                Text("No trend yet — first scan seeds the chart.")
+            if let last {
+                Text(last == 0 ? "Clear" : "\(last) open")
+                    .font(.system(size: max(10, f(11)), design: .default))
+                    .foregroundStyle(last == 0 ? Theme.inkAlpha(0.4) : Theme.rust)
+                    .lineLimit(1)
+            } else {
+                Text("No scan yet")
                     .font(.system(size: max(10, f(11)), design: .default))
                     .foregroundStyle(Theme.inkAlpha(0.4))
-            } else {
-                let maxCount = max(1, history.map(\.findingsCount).max() ?? 1)
-                HStack(alignment: .center, spacing: f(7)) {
-                    ForEach(Array(history.enumerated()), id: \.offset) { _, snapshot in
-                        let t = CGFloat(snapshot.findingsCount) / CGFloat(maxCount)
-                        let size = max(f(7), f(7) + t * f(11))
-                        Circle()
-                            .fill(snapshot.findingsCount == 0 ? Theme.inkAlpha(0.22) : Theme.rust.opacity(0.45 + Double(t) * 0.5))
-                            .frame(width: size, height: size)
-                    }
-                    Spacer(minLength: 0)
-                }
-                .frame(height: f(24))
-
-                HStack {
-                    Text("Older")
-                        .font(.system(size: f(9), weight: .medium, design: .default))
-                        .foregroundStyle(Theme.inkAlpha(0.35))
-                    Spacer()
-                    Text("Now")
-                        .font(.system(size: f(9), weight: .medium, design: .default))
-                        .foregroundStyle(Theme.inkAlpha(0.35))
-                }
+                    .lineLimit(1)
             }
         }
-    }
-
-    private func trendLabel(_ history: [ScanSnapshot]) -> String {
-        guard history.count > 1 else { return "\(history.last?.findingsCount ?? 0) findings" }
-        let recent = history.suffix(3).map(\.findingsCount)
-        let earlier = history.dropLast(3).suffix(3).map(\.findingsCount)
-        guard !earlier.isEmpty else { return "\(history.last?.findingsCount ?? 0) findings" }
-        let recentAvg = Double(recent.reduce(0, +)) / Double(recent.count)
-        let earlierAvg = Double(earlier.reduce(0, +)) / Double(earlier.count)
-        if recentAvg > earlierAvg + 0.5 { return "rising" }
-        if recentAvg < earlierAvg - 0.5 { return "falling" }
-        return "steady"
     }
 }
 
@@ -227,7 +195,7 @@ private struct DotStrip: View {
                 ForEach(Array(entries.enumerated()), id: \.offset) { _, entry in
                     Circle()
                         .fill(entry.flagged ? Theme.rust : Theme.ink.opacity(0.85))
-                        .frame(width: entry.flagged ? f(8) : f(6.5), height: entry.flagged ? f(8) : f(6.5))
+                        .frame(width: f(6.5), height: f(6.5))
                 }
             }
             Spacer(minLength: 0)

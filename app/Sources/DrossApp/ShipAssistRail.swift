@@ -49,9 +49,6 @@ struct ShipAssistRail: View {
             memoryBlock
             Rectangle().fill(Theme.hair).frame(height: 1)
                 .padding(.vertical, f(16))
-            guideBlock
-            Rectangle().fill(Theme.hair).frame(height: 1)
-                .padding(.vertical, f(16))
             shortcutsBlock
             Spacer(minLength: 0)
             if report != nil {
@@ -59,8 +56,8 @@ struct ShipAssistRail: View {
             }
         }
         .padding(.leading, f(22))
-        .padding(.trailing, f(4))
-        .padding(.top, f(4))
+        .padding(.trailing, f(12))
+        .padding(.top, f(24))
         .padding(.bottom, f(36))
         .frame(maxHeight: .infinity, alignment: .topLeading)
     }
@@ -136,16 +133,6 @@ struct ShipAssistRail: View {
                     .foregroundStyle(Theme.inkAlpha(0.55))
                     .fixedSize(horizontal: false, vertical: true)
             }
-        }
-    }
-
-    private var guideBlock: some View {
-        VStack(alignment: .leading, spacing: f(8)) {
-            SpecEyebrow(title: "Why here", extra: nil, scale: scale)
-            Text("PR bots review diffs in the cloud. Dross is the pre-deploy pass for when you ship straight to main — especially contract drift between app and API.")
-                .font(.system(size: f(12), design: .default))
-                .foregroundStyle(Theme.inkAlpha(0.55))
-                .fixedSize(horizontal: false, vertical: true)
         }
     }
 

@@ -141,7 +141,6 @@ struct ContentView: View {
                     }
                 )
                 .frame(width: f(240))
-                .padding(.horizontal, f(16))
 
                 Rectangle().fill(Theme.ink).frame(width: 1)
 
@@ -180,9 +179,9 @@ struct ContentView: View {
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .topLeading)
-                    .padding(.leading, f(24))
-                    .padding(.trailing, f(16))
-                    .padding(.top, f(18))
+                    .padding(.leading, f(28))
+                    .padding(.trailing, f(28))
+                    .padding(.top, f(24))
                     .padding(.bottom, f(28))
                 }
                 .hideScrollChrome()
@@ -198,8 +197,6 @@ struct ContentView: View {
                         onFixNow: fixNow
                     )
                     .frame(width: f(220))
-                    .padding(.leading, f(14))
-                    .padding(.top, f(18))
                     SpineLabel(text: "Limitations: none registered", scale: scale)
                         .frame(width: f(28))
                         .frame(maxHeight: .infinity)
