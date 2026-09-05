@@ -144,8 +144,22 @@ export function resolveLicenseKey(): { key?: string; source: 'env' | 'file' | 'n
   return { source: 'none' }
 }
 
+/**
+ * TEMPORARY (added 5 sept 2026): Lemon Squeezy hasn't approved the
+ * subscription product yet, so nobody can actually buy a license —
+ * dross-license-server can't mint one. Rather than gate a paid feature
+ * nobody can currently pay for, Pro is open to everyone until that's
+ * resolved. Single choke point (this function), so un-gating later is
+ * deleting this block, not touching any call site.
+ * TODO: remove once Lemon Squeezy approves the subscription product.
+ */
+const TEMPORARY_FREE_FOR_ALL = true
+
 /** Full resolved + verified status for the current environment. */
 export function licenseStatus(now: number = Date.now()): LicenseStatus {
+  if (TEMPORARY_FREE_FOR_ALL) {
+    return { valid: true, plan: 'pro', reason: 'Free during launch.', source: 'none' }
+  }
   const { key, source } = resolveLicenseKey()
   if (!key) return { valid: false, reason: 'No license found.', source: 'none' }
   return { ...verifyLicense(key, EMBEDDED_PUBLIC_KEY, now), source }
