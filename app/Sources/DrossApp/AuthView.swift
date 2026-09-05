@@ -161,6 +161,7 @@ struct AuthPopup: View {
             }
             .textFieldStyle(.plain)
             .font(.system(size: 13, design: .monospaced))
+            .foregroundStyle(Theme.ink)
             .padding(.horizontal, 10)
             .padding(.vertical, 10)
             .overlay(Rectangle().stroke(Theme.ink, lineWidth: 1))

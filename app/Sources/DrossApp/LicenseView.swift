@@ -25,6 +25,7 @@ struct LicenseView: View {
                     TextField("dross-v1.…", text: $keyField)
                         .textFieldStyle(.plain)
                         .font(.system(size: 12, design: .monospaced))
+                        .foregroundStyle(Theme.ink)
                         .padding(8)
                         .overlay(Rectangle().stroke(Theme.ink, lineWidth: 1))
                     Button("ACTIVATE") { activate() }

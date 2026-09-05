@@ -164,6 +164,7 @@ struct CodeFixPopup: View {
                         .padding(.bottom, 4)
                     TextEditor(text: $draft)
                         .font(.system(size: 11.5, design: .monospaced))
+                        .foregroundColor(Theme.ink)
                         .scrollContentBackground(.hidden)
                         .padding(.horizontal, 6)
                         .onChange(of: draft) { _, _ in

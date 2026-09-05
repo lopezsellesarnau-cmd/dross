@@ -190,6 +190,7 @@ struct HomeView: View {
             TextField("", text: $query)
                 .textFieldStyle(.plain)
                 .font(.system(size: f(13), weight: .medium, design: .monospaced))
+                .foregroundStyle(Theme.ink)
                 .padding(.horizontal, f(14))
         }
         .frame(height: f(36))
