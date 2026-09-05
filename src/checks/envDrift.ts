@@ -110,7 +110,7 @@ export function checkEnvDrift(repoRoot: string, files: SourceFile[]): Finding[] 
           envFiles.length === 0
             ? `"${name}" is read from the environment, but this repo has no .env.example (or .env*) — deploy will fail for anyone who clones without guessing the vars.`
             : `"${name}" is read in code but missing from ${envFiles.join(', ')} — classic ship-break when the host env isn’t set.`,
-        fixHint: 'open-editor',
+        fixHint: 'add-env-example',
       })
     }
   }

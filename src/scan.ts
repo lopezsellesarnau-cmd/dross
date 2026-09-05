@@ -38,7 +38,7 @@ export type CollectResult = { files: SourceFile[]; truncated: boolean }
  *  No .gitignore parsing yet (v1) — SKIP_DIRS covers the common cases;
  *  a real .gitignore reader is a fast-follow, not a blocker for the first
  *  check to be useful. */
-export function collectSourceFiles(repoRoot: string): CollectResult {
+function collectSourceFiles(repoRoot: string): CollectResult {
   const files: SourceFile[] = []
   let truncated = false
 

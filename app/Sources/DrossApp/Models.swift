@@ -7,6 +7,7 @@ enum Severity: String, Codable {
 enum FixHint: String, Codable {
     case removeExport = "remove-export"
     case deleteDead = "delete-dead"
+    case addEnvExample = "add-env-example"
     case openEditor = "open-editor"
 }
 

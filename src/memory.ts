@@ -41,7 +41,7 @@ export function emptyMemory(): MemoryStore {
   return { version: 1, decisions: {} }
 }
 
-export function memoryPath(repoRoot: string): string {
+function memoryPath(repoRoot: string): string {
   return join(repoRoot, '.dross', 'memory.json')
 }
 

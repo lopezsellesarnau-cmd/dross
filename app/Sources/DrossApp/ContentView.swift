@@ -632,7 +632,7 @@ struct ContentView: View {
     /// so earlier edits don't shift later line numbers in the same file.
     private func fixAllSafeExports() {
         guard let findings = report?.openFindings.filter({
-            ($0.fixHint == .removeExport || $0.fixHint == .deleteDead) && $0.line != nil
+            ($0.fixHint == .removeExport || $0.fixHint == .deleteDead || $0.fixHint == .addEnvExample) && $0.line != nil
         }), !findings.isEmpty else { return }
         let ordered = findings.sorted { a, b in
             if a.file != b.file { return a.file < b.file }

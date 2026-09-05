@@ -23,7 +23,7 @@ struct QualityGatePanel: View {
     }
     private var safeExportCount: Int {
         report.openFindings.filter {
-            $0.fixHint == .removeExport || $0.fixHint == .deleteDead
+            $0.fixHint == .removeExport || $0.fixHint == .deleteDead || $0.fixHint == .addEnvExample
         }.count
     }
     private var truncated: Bool { report.truncated }

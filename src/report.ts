@@ -1,6 +1,6 @@
 export type Severity = 'info' | 'warning' | 'finding'
 
-export type FixHint = 'remove-export' | 'delete-dead' | 'open-editor'
+export type FixHint = 'remove-export' | 'delete-dead' | 'add-env-example' | 'open-editor'
 
 export type Confidence = 'high' | 'medium' | 'low'
 

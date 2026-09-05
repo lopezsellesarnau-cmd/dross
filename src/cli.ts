@@ -4,6 +4,7 @@ import { companionRoots } from './companions.js'
 import { runScan } from './runScan.js'
 import { fixRemoveExport } from './fix/removeExport.js'
 import { fixDeleteDead } from './fix/deleteDead.js'
+import { fixAddEnvExample } from './fix/addEnvExample.js'
 import {
   applyMemory,
   blockingCount,
@@ -31,7 +32,7 @@ Usage:
       can compare both sides (TRACE-class). Exit 1 if findings.
   dross [path] [--json]
       Same as scan (shortcut for a single root).
-  dross fix <repo> <file> <line> [remove-export|delete-dead] [--json]
+  dross fix <repo> <file> <line> [remove-export|delete-dead|add-env-example] [--json]
   dross mute <repo> <file> <line> [--reason "..."]
       Remember this finding as accepted — muted findings do not fail CI.
   dross unmute <repo> <file> <line>
@@ -163,7 +164,7 @@ async function main() {
       ? rest[base + 3]
       : 'remove-export') as FixHint
     if (!repoArg || !relPath || !Number.isFinite(line)) {
-      console.error('Usage: dross fix <repoRoot> <relPath> <line> [remove-export|delete-dead]')
+      console.error('Usage: dross fix <repoRoot> <relPath> <line> [remove-export|delete-dead|add-env-example]')
       process.exitCode = 2
       return
     }
@@ -171,7 +172,9 @@ async function main() {
     const result =
       kind === 'delete-dead'
         ? fixDeleteDead(root, relPath, line)
-        : fixRemoveExport(root, relPath, line)
+        : kind === 'add-env-example'
+          ? fixAddEnvExample(root, relPath, line)
+          : fixRemoveExport(root, relPath, line)
     if (asJson) console.log(JSON.stringify(result))
     else console.log(result.ok ? `✓ ${result.message}` : `✗ ${result.message}`)
     process.exitCode = result.ok ? 0 : 1

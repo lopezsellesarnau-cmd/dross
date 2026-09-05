@@ -5,6 +5,7 @@ import Foundation
 enum VerifiedFixer {
     case removeExport
     case deleteDead
+    case addEnvExample
 
     struct Result {
         let ok: Bool
@@ -17,6 +18,7 @@ enum VerifiedFixer {
         switch finding.fixHint {
         case .removeExport: return .removeExport
         case .deleteDead: return .deleteDead
+        case .addEnvExample: return .addEnvExample
         default:
             // Fallback when an older cached report omitted fixHint.
             if finding.check == "dead-exports" {
@@ -25,6 +27,7 @@ enum VerifiedFixer {
                 }
                 return .deleteDead
             }
+            if finding.check == "env-drift" { return .addEnvExample }
             return nil
         }
     }
@@ -33,6 +36,7 @@ enum VerifiedFixer {
         switch self {
         case .removeExport: return "Verified · strip export"
         case .deleteDead: return "Verified · delete dead code"
+        case .addEnvExample: return "Verified · document env var"
         }
     }
 
@@ -42,6 +46,8 @@ enum VerifiedFixer {
             return "Deterministic rewrite: removes the export keyword only."
         case .deleteDead:
             return "Deterministic rewrite: deletes the unused declaration block (brace-matched)."
+        case .addEnvExample:
+            return "Deterministic rewrite: adds the var name to .env.example (empty — no secrets)."
         }
     }
 
@@ -49,6 +55,7 @@ enum VerifiedFixer {
         switch self {
         case .removeExport: return "remove-export"
         case .deleteDead: return "delete-dead"
+        case .addEnvExample: return "add-env-example"
         }
     }
 
@@ -62,6 +69,8 @@ enum VerifiedFixer {
             return removeExport(abs: resolved.abs, rel: file, line: line)
         case .deleteDead:
             return deleteDead(abs: resolved.abs, rel: file, line: line)
+        case .addEnvExample:
+            return addEnvExample(root: resolved.root, abs: resolved.abs, rel: file, line: line)
         }
     }
 
@@ -218,6 +227,58 @@ enum VerifiedFixer {
             ok: true,
             file: rel,
             message: "Deleted dead declaration at lines \(from + 1)–\(to + 1)"
+        )
+    }
+
+    // MARK: - add-env-example
+
+    private static func addEnvExample(root: String, abs: String, rel: String, line: Int) -> Result {
+        guard let text = try? String(contentsOfFile: abs, encoding: .utf8) else {
+            return Result(ok: false, file: rel, message: "Could not read \(rel)")
+        }
+        let srcLines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        let idx = line - 1
+        guard idx >= 0, idx < srcLines.count else {
+            return Result(ok: false, file: rel, message: "Line \(line) out of range")
+        }
+        let srcLine = srcLines[idx]
+        let pattern = #"(?:process\.env|import\.meta\.env|Deno\.env\.get)\s*(?:\.([A-Z][A-Z0-9_]*)|\(\s*['"`]([A-Z][A-Z0-9_]*)['"`]\s*\))"#
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(in: srcLine, range: NSRange(srcLine.startIndex..., in: srcLine))
+        else {
+            return Result(ok: false, file: rel, message: "No env access on line \(line)")
+        }
+        var key: String?
+        for g in 1...2 {
+            let r = match.range(at: g)
+            if r.location != NSNotFound, let swift = Range(r, in: srcLine) {
+                key = String(srcLine[swift])
+            }
+        }
+        guard let name = key else {
+            return Result(ok: false, file: rel, message: "Could not extract env name on line \(line)")
+        }
+
+        let examplePath = (root as NSString).appendingPathComponent(".env.example")
+        var existing = (try? String(contentsOfFile: examplePath, encoding: .utf8)) ?? ""
+        let already = existing.split(separator: "\n").contains { raw in
+            let t = raw.trimmingCharacters(in: .whitespaces)
+            return t.hasPrefix("\(name)=") || t.hasPrefix("export \(name)=")
+        }
+        if already {
+            return Result(ok: true, file: ".env.example", message: "\(name) already in .env.example")
+        }
+        if !existing.isEmpty && !existing.hasSuffix("\n") { existing += "\n" }
+        existing += "\(name)=\n"
+        do {
+            try existing.write(toFile: examplePath, atomically: true, encoding: .utf8)
+        } catch {
+            return Result(ok: false, file: ".env.example", message: error.localizedDescription)
+        }
+        return Result(
+            ok: true,
+            file: ".env.example",
+            message: "Documented \(name) in .env.example (empty — set the real value on the host)."
         )
     }
 

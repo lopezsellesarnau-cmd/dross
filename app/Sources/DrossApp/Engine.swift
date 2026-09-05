@@ -135,6 +135,7 @@ enum Engine {
         let fixer: VerifiedFixer
         switch kind {
         case "delete-dead": fixer = .deleteDead
+        case "add-env-example": fixer = .addEnvExample
         default: fixer = .removeExport
         }
         let result = VerifiedFixer.apply(repoPath: repoPath, file: file, line: line, kind: fixer)
