@@ -85,10 +85,13 @@ enum VerifiedFixer {
         var lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
         if hadTrailing && lines.last == "" { lines.removeLast() }
 
-        let idx = line - 1
-        guard idx >= 0, idx < lines.count else {
+        let reportedIdx = line - 1
+        guard reportedIdx >= 0, reportedIdx < lines.count else {
             return Result(ok: false, file: rel, message: "Line \(line) out of range")
         }
+        // Same staleness tolerance as deleteDead — the reported line may
+        // have drifted if the file changed since the scan.
+        let idx = nearbyDeclarationIndex(lines, around: reportedIdx) ?? reportedIdx
 
         let original = lines[idx]
         if let next = stripExportKeyword(original), next != original {
@@ -132,6 +135,27 @@ enum VerifiedFixer {
         return next == line ? nil : next
     }
 
+    /// Finds the nearest line matching a declaration (function/const/class/
+    /// type/interface, optionally exported) within `window` lines either
+    /// side of `idx`, checking `idx` itself first. Shared by removeExport
+    /// and deleteDead so a stale line number — the report was generated
+    /// before the file changed — doesn't fail outright when the real
+    /// declaration is still right there, just shifted a couple of lines.
+    private static func nearbyDeclarationIndex(_ lines: [String], around idx: Int, window: Int = 3) -> Int? {
+        let pattern = #"^\s*(export\s+)?(async\s+)?function\b|^\s*(export\s+)?(const|let|class|type|interface)\b"#
+        guard idx >= 0, idx < lines.count else { return nil }
+        if lines[idx].range(of: pattern, options: .regularExpression) != nil { return idx }
+        for offset in 1...window {
+            for candidate in [idx + offset, idx - offset] {
+                guard candidate >= 0, candidate < lines.count,
+                      lines[candidate].range(of: pattern, options: .regularExpression) != nil
+                else { continue }
+                return candidate
+            }
+        }
+        return nil
+    }
+
     // MARK: - delete-dead
 
     private static func deleteDead(abs: String, rel: String, line: Int) -> Result {
@@ -142,26 +166,38 @@ enum VerifiedFixer {
         var lines = text.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
         if hadTrailing && lines.last == "" { lines.removeLast() }
 
-        let idx = line - 1
-        guard idx >= 0, idx < lines.count else {
+        let reportedIdx = line - 1
+        guard reportedIdx >= 0, reportedIdx < lines.count else {
             return Result(ok: false, file: rel, message: "Line \(line) out of range")
         }
 
-        let startLine = lines[idx]
-        let isDecl =
-            startLine.range(of: #"^\s*(export\s+)?(async\s+)?function\b"#, options: .regularExpression) != nil
-            || startLine.range(of: #"^\s*(export\s+)?(const|let|class|type|interface)\b"#, options: .regularExpression) != nil
-        guard isDecl else {
+        // The reported line can drift from the real declaration if the file
+        // changed since the scan that produced this finding was run (a
+        // leading comment or blank line added above it shifts everything
+        // below) — search a small window before failing outright, the same
+        // way a human would glance up/down a couple of lines rather than
+        // give up immediately.
+        guard let idx = nearbyDeclarationIndex(lines, around: reportedIdx) else {
             return Result(
                 ok: false,
                 file: rel,
                 message: "Line \(line) isn’t a deletable declaration (function/const/class/type)"
             )
         }
-
         let slice = lines[idx...].joined(separator: "\n")
         var endIdx = idx
-        var brace = 0, paren = 0, bracket = 0
+        // Single combined depth, not three independent counters — see
+        // nearbyDeclarationIndex's neighbor in deleteDead.ts for the full
+        // story: a parameter list's own balanced braces (destructuring,
+        // inline type annotations) can bring brace *and* paren back to 0
+        // together, before the body has even opened, and three independent
+        // counters mistook that for "declaration complete" — truncating the
+        // deletion to just the signature line and orphaning the body in the
+        // file. A close only ends the declaration when depth returns to 0
+        // via `}` (a block closing) or `;` (a brace-less ending) — never via
+        // `)` or `]` alone, since those close groups that can have more
+        // (a body, an arrow) still to come.
+        var depth = 0
         var started = false
         var inStr: Character?
         var i = slice.startIndex
@@ -182,25 +218,12 @@ enum VerifiedFixer {
             }
 
             switch ch {
-            case "{": brace += 1; started = true
-            case "}": brace -= 1
-            case "(": paren += 1; started = true
-            case ")": paren -= 1
-            case "[": bracket += 1; started = true
-            case "]": bracket -= 1
+            case "{", "(", "[": depth += 1; started = true
+            case "}", ")", "]": depth -= 1
             default: break
             }
 
-            // const x = 1; (no brackets) — end at semicolon once past =
-            let simpleAssign = startLine.range(of: #"=\s*[^({\[]"#, options: .regularExpression) != nil
-            if !started && simpleAssign && (ch == ";" || ch == "\n") {
-                let consumed = String(slice[slice.startIndex...i])
-                endIdx = idx + consumed.split(separator: "\n", omittingEmptySubsequences: false).count - 1
-                break
-            }
-
-            // Array/object/function body fully closed
-            if started && brace <= 0 && paren <= 0 && bracket <= 0 {
+            if started && depth <= 0 && (ch == "}" || ch == ";") {
                 let consumed = String(slice[slice.startIndex...i])
                 endIdx = idx + consumed.split(separator: "\n", omittingEmptySubsequences: false).count - 1
                 if endIdx + 1 < lines.count && lines[endIdx + 1].range(of: #"^\s*;\s*$"#, options: .regularExpression) != nil {

@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { nearbyDeclarationIndex } from './nearbyDeclaration.js'
 
 export type FixResult = {
   ok: boolean
@@ -24,28 +25,35 @@ export function fixDeleteDead(repoRoot: string, relPath: string, line: number): 
   }
 
   const lines = text.split('\n')
-  const idx = line - 1
-  if (idx < 0 || idx >= lines.length) {
+  const reportedIdx = line - 1
+  if (reportedIdx < 0 || reportedIdx >= lines.length) {
     return { ok: false, file: relPath, message: `Line ${line} out of range` }
   }
 
-  const startLine = lines[idx]
-  if (
-    !/^\s*(export\s+)?(async\s+)?function\b/.test(startLine) &&
-    !/^\s*(export\s+)?(const|let|class|type|interface)\b/.test(startLine)
-  ) {
+  const idx = nearbyDeclarationIndex(lines, reportedIdx)
+  if (idx === null) {
     return {
       ok: false,
       file: relPath,
       message: `Line ${line} isn’t a deletable declaration (function/const/class/type)`,
     }
   }
+  const startLine = lines[idx]
 
   // Walk forward collecting a balanced block.
   let endIdx = idx
-  let brace = 0
-  let paren = 0
-  let bracket = 0
+  // Single combined depth, not three independent counters — a function's
+  // parameter list can contain its own fully-balanced braces (destructuring,
+  // inline type annotations: `({ step }: { step: 1|2|3 })`), which brings
+  // brace count back to 0 — together with paren count also reaching 0 as
+  // the parameter list's `)` closes — *before* the body has even opened.
+  // Three independent counters treated that coincidence as "declaration
+  // complete" and truncated the deletion to just the signature line,
+  // leaving the body orphaned in the file. A close only counts as the real
+  // end once depth returns to 0 via `}` (a body/block closing) or `;` (a
+  // brace-less declaration ending) — never via `)` or `]` alone, since
+  // those close argument/param/index groups that can have more to follow.
+  let depth = 0
   let started = false
   let inStr: string | null = null
 
@@ -62,32 +70,14 @@ export function fixDeleteDead(repoRoot: string, relPath: string, line: number): 
       inStr = ch
       continue
     }
-    if (ch === '{') {
-      brace++
+    if (ch === '{' || ch === '(' || ch === '[') {
+      depth++
       started = true
-    } else if (ch === '}') {
-      brace--
-    } else if (ch === '(') {
-      paren++
-      started = true
-    } else if (ch === ')') {
-      paren--
-    } else if (ch === '[') {
-      bracket++
-      started = true // export const X = [ … ] must delete the whole array, not just the header line
-    } else if (ch === ']') {
-      bracket--
+    } else if (ch === '}' || ch === ')' || ch === ']') {
+      depth--
     }
 
-    // const x = 1  (no braces) — end at semicolon or newline once we're past =
-    if (!started && /=\s*[^({\[]/.test(startLine) && (ch === ';' || ch === '\n')) {
-      // find which line we're on
-      const consumed = slice.slice(0, i + 1)
-      endIdx = idx + consumed.split('\n').length - 1
-      break
-    }
-
-    if (started && brace <= 0 && paren <= 0 && bracket <= 0) {
+    if (started && depth <= 0 && (ch === '}' || ch === ';')) {
       const consumed = slice.slice(0, i + 1)
       endIdx = idx + consumed.split('\n').length - 1
       // swallow trailing semicolon on same or next short line

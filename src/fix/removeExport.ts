@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { nearbyDeclarationIndex } from './nearbyDeclaration.js'
 
 export type FixResult = {
   ok: boolean
@@ -23,10 +24,14 @@ export function fixRemoveExport(repoRoot: string, relPath: string, line: number)
   }
 
   const lines = text.split('\n')
-  const idx = line - 1
-  if (idx < 0 || idx >= lines.length) {
+  const reportedIdx = line - 1
+  if (reportedIdx < 0 || reportedIdx >= lines.length) {
     return { ok: false, file: relPath, message: `Line ${line} out of range` }
   }
+  // Same staleness tolerance as deleteDead — fall back to the reported line
+  // if nothing declaration-shaped is nearby, so the existing "no removable
+  // export" / "already fixed" messages below still apply as before.
+  const idx = nearbyDeclarationIndex(lines, reportedIdx) ?? reportedIdx
 
   const original = lines[idx]
   // export async function X / export function X / export const X / export class X
