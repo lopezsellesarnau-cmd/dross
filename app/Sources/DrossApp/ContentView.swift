@@ -627,24 +627,52 @@ struct ContentView: View {
 
     /// Batch-apply remove-export via engine (quality-gate action). Bottom-up by line
     /// so earlier edits don't shift later line numbers in the same file.
+    ///
+    /// Re-scans right before applying anything instead of trusting `report` —
+    /// that's whatever was cached when this repo was opened (`store.report`
+    /// only scans fresh if there's *no* cache at all), so if the file changed
+    /// since that cache was made, its line numbers are stale. Applying a
+    /// stale line either fails loudly (VerifiedFixer's declaration check
+    /// catches it — "Line N isn't a deletable declaration") or, worse, could
+    /// silently hit the wrong line if one happened to match by coincidence.
+    /// A fresh scan immediately before fixing is the only way to guarantee
+    /// the line numbers being acted on match the file on disk right now.
     private func fixAllSafeExports() {
-        guard let findings = report?.openFindings.filter({
-            ($0.fixHint == .removeExport || $0.fixHint == .deleteDead || $0.fixHint == .addEnvExample) && $0.line != nil
-        }), !findings.isEmpty else { return }
-        let ordered = findings.sorted { a, b in
-            if a.file != b.file { return a.file < b.file }
-            return (a.line ?? 0) > (b.line ?? 0)
-        }
         fixingSafeExports = true
         errorText = nil
+        let path = repoPath
         DispatchQueue.global(qos: .userInitiated).async {
+            let freshReport: ScanReport
+            do {
+                freshReport = try Engine.scan(repoPath: path)
+            } catch {
+                DispatchQueue.main.async {
+                    self.fixingSafeExports = false
+                    self.errorText = "Re-scan before fix failed: \(error.localizedDescription)"
+                }
+                return
+            }
+            let findings = freshReport.openFindings.filter {
+                ($0.fixHint == .removeExport || $0.fixHint == .deleteDead || $0.fixHint == .addEnvExample) && $0.line != nil
+            }
+            let ordered = findings.sorted { a, b in
+                if a.file != b.file { return a.file < b.file }
+                return (a.line ?? 0) > (b.line ?? 0)
+            }
+            guard !ordered.isEmpty else {
+                DispatchQueue.main.async {
+                    self.fixingSafeExports = false
+                    self.report = freshReport
+                }
+                return
+            }
             var failures: [String] = []
             for finding in ordered {
                 guard let line = finding.line,
                       let kind = VerifiedFixer.fixer(for: finding)?.cliKind else { continue }
                 do {
                     let result = try Engine.applyVerifiedFix(
-                        repoPath: self.repoPath, file: finding.file, line: line, kind: kind
+                        repoPath: path, file: finding.file, line: line, kind: kind
                     )
                     if !result.ok { failures.append("\(finding.file):\(line) — \(result.message)") }
                 } catch {
