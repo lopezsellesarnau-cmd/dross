@@ -146,6 +146,30 @@ struct CodeFixPopup: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    // Shared between the gutter and the editor so the two stay in lockstep —
+    // TextEditor's own default line spacing isn't documented/stable enough
+    // to reverse-engineer, so both sides pin the same explicit values
+    // instead of trying to match an implicit one.
+    private let editorFontSize: CGFloat = 11.5
+    private let editorLineSpacing: CGFloat = 3
+
+    /// Absolute file line numbers alongside the editor — recomputed from
+    /// `draft`'s live line count (not the original `rangeStart...rangeEnd`)
+    /// so numbers stay correct while typing, before Save re-syncs the range.
+    private var lineGutter: some View {
+        let lineCount = max(1, draft.components(separatedBy: "\n").count)
+        return VStack(alignment: .trailing, spacing: editorLineSpacing) {
+            ForEach(0..<lineCount, id: \.self) { offset in
+                Text("\(rangeStart + offset)")
+                    .font(.system(size: editorFontSize, design: .monospaced))
+                    .foregroundStyle(Theme.inkAlpha(0.32))
+            }
+        }
+        .padding(.top, 5)
+        .padding(.leading, 8)
+        .padding(.trailing, 4)
+    }
+
     private var editor: some View {
         Group {
             if loadFailed {
@@ -162,15 +186,19 @@ struct CodeFixPopup: View {
                         .padding(.horizontal, 14)
                         .padding(.top, 8)
                         .padding(.bottom, 4)
-                    TextEditor(text: $draft)
-                        .font(.system(size: 11.5, design: .monospaced))
-                        .foregroundColor(Theme.ink)
-                        .scrollContentBackground(.hidden)
-                        .padding(.horizontal, 6)
-                        .onChange(of: draft) { _, _ in
-                            dirty = true
-                            status = nil
-                        }
+                    HStack(alignment: .top, spacing: 0) {
+                        lineGutter
+                        TextEditor(text: $draft)
+                            .font(.system(size: editorFontSize, design: .monospaced))
+                            .lineSpacing(editorLineSpacing)
+                            .foregroundColor(Theme.ink)
+                            .scrollContentBackground(.hidden)
+                            .padding(.horizontal, 6)
+                            .onChange(of: draft) { _, _ in
+                                dirty = true
+                                status = nil
+                            }
+                    }
                 }
             }
         }
@@ -271,16 +299,19 @@ struct CodeFixPopup: View {
                 let result = try Engine.applyVerifiedFix(
                     repoPath: root, file: file, line: line, kind: kind
                 )
-                DispatchQueue.main.async {
-                    self.applying = false
-                    if result.ok {
-                        self.status = result.message
-                        self.dirty = false
-                        self.onFixedAndAdvance?()
-                    } else {
+                guard result.ok else {
+                    DispatchQueue.main.async {
+                        self.applying = false
                         self.status = result.message
                     }
+                    return
                 }
+                // Proof, not trust: a deterministic rewrite can still be
+                // syntactically valid but semantically wrong (e.g. the wrong
+                // block matched a brace-balance edge case) — tsc is the
+                // oracle that catches that before the user moves on to the
+                // next finding believing this one is actually safe.
+                self.verifyAndFinish(baseMessage: result.message, root: root)
             } catch {
                 DispatchQueue.main.async {
                     self.applying = false
@@ -290,7 +321,26 @@ struct CodeFixPopup: View {
         }
     }
 
+    /// Runs `tsc --noEmit` after a fix lands and only advances to the next
+    /// finding if it still passes — a failed typecheck stays on screen so
+    /// the user sees what broke instead of the popup moving on as if
+    /// nothing happened. Always off the main thread; `Engine.verify` shells
+    /// out to a real compiler process, which blocks.
+    private func verifyAndFinish(baseMessage: String, root: String, advanceOnSuccess: Bool = true) {
+        DispatchQueue.main.async { self.status = baseMessage + "\nVerifying…" }
+        let verify = Engine.verify(repoPath: root)
+        DispatchQueue.main.async {
+            self.applying = false
+            self.status = baseMessage + "\n" + (verify.ok ? "✓ \(verify.message)" : "✗ \(verify.message)")
+            self.dirty = false
+            if verify.ok && advanceOnSuccess {
+                self.onFixedAndAdvance?()
+            }
+        }
+    }
+
     private func saveSlice(advance: Bool) {
+        applying = true
         guard let content = try? String(contentsOfFile: filePath, encoding: .utf8) else {
             status = "Couldn't read file to save."
             applying = false
@@ -309,10 +359,14 @@ struct CodeFixPopup: View {
         do {
             try allLines.joined(separator: "\n").write(toFile: filePath, atomically: true, encoding: .utf8)
             rangeEnd = rangeStart + newLines.count - 1
-            dirty = false
-            status = advance ? "Saved — advancing…" : "Saved to disk."
-            applying = false
-            if advance { onFixedAndAdvance?() }
+            let root = repoRoot
+            // Same "proof, not trust" step as autoCorrect — a manual edit is
+            // exactly the case most likely to introduce a real typo, so it's
+            // the one that most needs the compiler to check it before the
+            // popup tells the user it's fine.
+            DispatchQueue.global(qos: .userInitiated).async {
+                self.verifyAndFinish(baseMessage: "Saved to disk.", root: root, advanceOnSuccess: advance)
+            }
         } catch {
             status = "Save failed: \(error.localizedDescription)"
             applying = false
