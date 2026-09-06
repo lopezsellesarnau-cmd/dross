@@ -111,6 +111,24 @@ final class NumberedTextView: NSTextView {
         drawLineNumbers()
     }
 
+    /// NSTextView invalidates only the rects its own text layout actually
+    /// changed — it has no idea a gutter is drawn alongside it, so a
+    /// partial invalidation (typing on one line, or AppKit's own
+    /// scroll-driven "redraw the newly exposed strip" logic) can compute a
+    /// dirty rect that never includes the gutter's x-range at all. When
+    /// that happens, draw(_:) still runs, but everything this class draws
+    /// into the gutter is silently clipped away — the actual mechanism
+    /// behind the numbers just not appearing (or not moving) even though
+    /// the drawing code itself is correct. Widening every invalidation
+    /// request to the view's full width closes that off at the source,
+    /// regardless of what triggered it.
+    override func setNeedsDisplay(_ invalidRect: NSRect) {
+        var widened = invalidRect
+        widened.origin.x = 0
+        widened.size.width = max(bounds.width, invalidRect.maxX)
+        super.setNeedsDisplay(widened)
+    }
+
     /// Paints over the reserved left margin so it reads as one distinct
     /// panel rather than numbers floating on the same surface as the code
     /// — same background as the rest, one shade darker, same shade for
