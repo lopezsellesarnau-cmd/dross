@@ -146,29 +146,7 @@ struct CodeFixPopup: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    // Shared between the gutter and the editor so the two stay in lockstep —
-    // TextEditor's own default line spacing isn't documented/stable enough
-    // to reverse-engineer, so both sides pin the same explicit values
-    // instead of trying to match an implicit one.
     private let editorFontSize: CGFloat = 11.5
-    private let editorLineSpacing: CGFloat = 3
-
-    /// Absolute file line numbers alongside the editor — recomputed from
-    /// `draft`'s live line count (not the original `rangeStart...rangeEnd`)
-    /// so numbers stay correct while typing, before Save re-syncs the range.
-    private var lineGutter: some View {
-        let lineCount = max(1, draft.components(separatedBy: "\n").count)
-        return VStack(alignment: .trailing, spacing: editorLineSpacing) {
-            ForEach(0..<lineCount, id: \.self) { offset in
-                Text("\(rangeStart + offset)")
-                    .font(.system(size: editorFontSize, design: .monospaced))
-                    .foregroundStyle(Theme.inkAlpha(0.32))
-            }
-        }
-        .padding(.top, 5)
-        .padding(.leading, 8)
-        .padding(.trailing, 4)
-    }
 
     private var editor: some View {
         Group {
@@ -186,18 +164,17 @@ struct CodeFixPopup: View {
                         .padding(.horizontal, 14)
                         .padding(.top, 8)
                         .padding(.bottom, 4)
-                    HStack(alignment: .top, spacing: 0) {
-                        lineGutter
-                        TextEditor(text: $draft)
-                            .font(.system(size: editorFontSize, design: .monospaced))
-                            .lineSpacing(editorLineSpacing)
-                            .foregroundColor(Theme.ink)
-                            .scrollContentBackground(.hidden)
-                            .padding(.horizontal, 6)
-                            .onChange(of: draft) { _, _ in
-                                dirty = true
-                                status = nil
-                            }
+                    LineNumberTextEditor(
+                        text: $draft,
+                        startLine: rangeStart,
+                        fontSize: editorFontSize,
+                        textColor: NSColor(Theme.ink),
+                        gutterColor: NSColor(Theme.inkAlpha(0.32))
+                    )
+                    .padding(.horizontal, 6)
+                    .onChange(of: draft) { _, _ in
+                        dirty = true
+                        status = nil
                     }
                 }
             }
