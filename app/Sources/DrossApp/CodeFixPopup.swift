@@ -45,7 +45,10 @@ struct CodeFixPopup: View {
             VStack(spacing: 0) {
                 header
                 Rectangle().fill(Theme.hair).frame(height: 1)
-                meta
+                // Cap the notes block so a long finding message can't crowd
+                // the code out of the panel — it scrolls within its own strip.
+                ScrollView { meta }
+                    .frame(maxHeight: 176)
                 Rectangle().fill(Theme.hair).frame(height: 1)
                 editor
                 Rectangle().fill(Theme.hair).frame(height: 1)
@@ -53,6 +56,7 @@ struct CodeFixPopup: View {
             }
             .frame(width: panelW, height: panelH, alignment: .top)
             .background(pageBackground)
+            .clipShape(Rectangle())
             .overlay(Rectangle().stroke(Theme.inkAlpha(0.28), lineWidth: 1))
             .shadow(color: .black.opacity(0.08), radius: 18, x: 0, y: 8)
             .position(x: origin.x + panelW / 2, y: origin.y + panelH / 2)
@@ -173,14 +177,17 @@ struct CodeFixPopup: View {
                         backgroundColor: NSColor(pageBackground)
                     )
                     .padding(.horizontal, 6)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .onChange(of: draft) { _, _ in
                         dirty = true
                         status = nil
                     }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
         }
         .frame(maxHeight: .infinity)
+        .clipped()
     }
 
     private var footer: some View {

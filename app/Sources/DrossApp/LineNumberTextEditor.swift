@@ -1,22 +1,22 @@
 import SwiftUI
 import AppKit
 
-/// A plain NSTextView wrapped for SwiftUI, with line numbers drawn directly
-/// into its own left margin — not a second view trying to track this one.
+/// A plain NSTextView wrapped for SwiftUI, with a line-number gutter drawn
+/// by an `NSRulerView` attached to the scroll view.
 ///
-/// Two earlier approaches both failed for the same underlying reason: a
-/// gutter that lives in a *different* view than the text can only ever
-/// approximate staying in sync with it.
+/// History of what did *not* work, so it isn't retried:
 ///   1. A SwiftUI VStack of Text views next to TextEditor — no connection
-///      to TextEditor's internal scroll position at all; it just sat still.
-///   2. An NSRulerView attached to the same NSScrollView — closer, but
-///      NSRulerView only redraws when told to, and the only redraw trigger
-///      wired up was text *edits*, not scrolling, so it still didn't move;
-///      it also paints its own default (opaque, wrong-colored) background.
-/// This version draws the numbers in NumberedTextView's own `draw(_:)`,
-/// right after the text itself — the same view, the same draw pass, the
-/// same scroll offset, automatically. There's nothing to keep in sync
-/// because there's only one view.
+///      to TextEditor's scroll position; it just sat still.
+///   2. An NSRulerView whose only redraw trigger was text edits — it never
+///      redrew on scroll, so it didn't move.
+///   3. Drawing the numbers inside the NSTextView's own `draw(_:)` — on a
+///      TextKit-2 / layer-backed text view the glyph layer composites over
+///      anything the view draws itself, so the gutter was painted and then
+///      hidden every frame (empty margin, no numbers).
+///
+/// This version goes back to NSRulerView — the purpose-built tool — but
+/// fixes (2): the ruler is invalidated on *every* content-bounds change
+/// (i.e. on scroll) as well as on text edits, so it tracks the text.
 struct LineNumberTextEditor: NSViewRepresentable {
     @Binding var text: String
     var startLine: Int
@@ -27,7 +27,17 @@ struct LineNumberTextEditor: NSViewRepresentable {
     var gutterWidth: CGFloat = 38
 
     func makeNSView(context: Context) -> NSScrollView {
-        let textView = NumberedTextView()
+        // Explicit TextKit 1 stack — a bare `NSTextView()` on macOS 12+ comes
+        // up on TextKit 2, whose layout objects the ruler can't enumerate the
+        // same way.
+        let textStorage = NSTextStorage()
+        let layoutManager = NSLayoutManager()
+        textStorage.addLayoutManager(layoutManager)
+        let container = NSTextContainer(size: NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude))
+        container.widthTracksTextView = true
+        layoutManager.addTextContainer(container)
+
+        let textView = NSTextView(frame: .zero, textContainer: container)
         textView.isRichText = false
         textView.isAutomaticQuoteSubstitutionEnabled = false
         textView.isAutomaticDashSubstitutionEnabled = false
@@ -39,29 +49,52 @@ struct LineNumberTextEditor: NSViewRepresentable {
         textView.backgroundColor = backgroundColor
         textView.delegate = context.coordinator
         textView.string = text
-        // Reserve the gutter as left+right inset (NSTextView insets the
-        // text container equally on both sides) — the right side loses the
-        // same width to nothing, an acceptable trade for a popup this
-        // narrow rather than fighting the text container's geometry to
-        // make the inset asymmetric.
-        textView.textContainerInset = NSSize(width: gutterWidth, height: 6)
+        textView.textContainerInset = NSSize(width: 4, height: 6)
+        // Standard resizable-in-a-scroll-view config: the text view must be
+        // allowed to grow vertically past the visible clip height, or long
+        // slices are clipped with no way to scroll to the rest.
         textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = false
         textView.autoresizingMask = [.width]
-        textView.textContainer?.widthTracksTextView = true
-        textView.gutterWidth = gutterWidth
-        textView.gutterColor = gutterColor
-        textView.gutterFont = .monospacedSystemFont(ofSize: fontSize, weight: .regular)
-        textView.startLine = startLine
+        textView.minSize = NSSize(width: 0, height: 0)
+        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude,
+                                  height: CGFloat.greatestFiniteMagnitude)
+        container.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
 
-        let scrollView = NSScrollView()
+        let scrollView = NonGreedyScrollView()
         scrollView.documentView = textView
         scrollView.hasVerticalScroller = true
+        scrollView.autohidesScrollers = true
         scrollView.hasHorizontalScroller = false
         scrollView.drawsBackground = true
         scrollView.backgroundColor = backgroundColor
 
+        let ruler = LineNumberRulerView(textView: textView)
+        ruler.startLine = startLine
+        ruler.ruleThickness = gutterWidth
+        ruler.gutterColor = gutterColor
+        ruler.gutterBackground = backgroundColor.blended(withFraction: 0.05, of: .black) ?? backgroundColor
+        ruler.gutterFont = .monospacedSystemFont(ofSize: fontSize, weight: .regular)
+        scrollView.verticalRulerView = ruler
+        scrollView.hasVerticalRuler = true
+        scrollView.rulersVisible = true
+
+        // (2) redraw the ruler on scroll, not only on edits.
+        let clip = scrollView.contentView
+        clip.postsBoundsChangedNotifications = true
+        NotificationCenter.default.addObserver(
+            forName: NSView.boundsDidChangeNotification,
+            object: clip,
+            queue: .main
+        ) { [weak ruler] _ in ruler?.needsDisplay = true }
+        NotificationCenter.default.addObserver(
+            forName: NSText.didChangeNotification,
+            object: textView,
+            queue: .main
+        ) { [weak ruler] _ in ruler?.needsDisplay = true }
+
         context.coordinator.textView = textView
+        context.coordinator.ruler = ruler
         return scrollView
     }
 
@@ -72,113 +105,110 @@ struct LineNumberTextEditor: NSViewRepresentable {
             textView.string = text
             textView.selectedRanges = selection
         }
-        if textView.startLine != startLine {
-            textView.startLine = startLine
-            textView.needsDisplay = true
+        if context.coordinator.ruler?.startLine != startLine {
+            context.coordinator.ruler?.startLine = startLine
         }
+        context.coordinator.ruler?.needsDisplay = true
     }
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
     final class Coordinator: NSObject, NSTextViewDelegate {
         var parent: LineNumberTextEditor
-        weak var textView: NumberedTextView?
+        weak var textView: NSTextView?
+        weak var ruler: LineNumberRulerView?
 
         init(_ parent: LineNumberTextEditor) { self.parent = parent }
 
         func textDidChange(_ notification: Notification) {
             guard let tv = notification.object as? NSTextView else { return }
             parent.text = tv.string
+            ruler?.needsDisplay = true
         }
     }
 }
 
-/// The text view itself draws its line numbers — see the type comment on
-/// LineNumberTextEditor for why this replaced two separate-view attempts.
-/// The numbers live entirely in `draw(_:)`; they're pixels, not text-view
-/// content, so there's no glyph or character storage for them at all —
-/// they can't be selected, edited, or deleted along with the code because
-/// they were never part of the document in the first place.
-final class NumberedTextView: NSTextView {
+/// A scroll view that never reports an intrinsic size. Inside a SwiftUI
+/// fixed-height panel, a plain NSScrollView demands its document view's full
+/// height, so a code slice taller than the panel spills past the footer and
+/// over the surrounding UI instead of scrolling within its own box.
+final class NonGreedyScrollView: NSScrollView {
+    override var intrinsicContentSize: NSSize {
+        NSSize(width: NSView.noIntrinsicMetric, height: NSView.noIntrinsicMetric)
+    }
+}
+
+/// Draws the line numbers. Numbering follows the same
+/// `components(separatedBy: "\n")` convention used elsewhere (Save computes
+/// its range from that count): line N is the Nth `\n`-delimited slice, and a
+/// trailing newline yields one more (empty) line.
+final class LineNumberRulerView: NSRulerView {
     var startLine: Int = 1
-    var gutterWidth: CGFloat = 38
     var gutterColor: NSColor = .secondaryLabelColor
+    var gutterBackground: NSColor = .textBackgroundColor
     var gutterFont: NSFont = .monospacedSystemFont(ofSize: 11.5, weight: .regular)
 
-    override func draw(_ dirtyRect: NSRect) {
-        super.draw(dirtyRect)
-        drawGutterBackground()
-        drawLineNumbers()
+    init(textView: NSTextView) {
+        super.init(scrollView: textView.enclosingScrollView, orientation: .verticalRuler)
+        self.clientView = textView
     }
 
-    /// NSTextView invalidates only the rects its own text layout actually
-    /// changed — it has no idea a gutter is drawn alongside it, so a
-    /// partial invalidation (typing on one line, or AppKit's own
-    /// scroll-driven "redraw the newly exposed strip" logic) can compute a
-    /// dirty rect that never includes the gutter's x-range at all. When
-    /// that happens, draw(_:) still runs, but everything this class draws
-    /// into the gutter is silently clipped away — the actual mechanism
-    /// behind the numbers just not appearing (or not moving) even though
-    /// the drawing code itself is correct. Widening every invalidation
-    /// request to the view's full width closes that off at the source,
-    /// regardless of what triggered it.
-    override func setNeedsDisplay(_ invalidRect: NSRect) {
-        var widened = invalidRect
-        widened.origin.x = 0
-        widened.size.width = max(bounds.width, invalidRect.maxX)
-        super.setNeedsDisplay(widened)
-    }
+    required init(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    /// Paints over the reserved left margin so it reads as one distinct
-    /// panel rather than numbers floating on the same surface as the code
-    /// — same background as the rest, one shade darker, same shade for
-    /// every line since it's a single fill, not drawn per-line.
-    private func drawGutterBackground() {
-        guard let scrollView = enclosingScrollView else { return }
-        let visible = visibleRect
-        let gutterRect = NSRect(x: visible.minX, y: visible.minY, width: gutterWidth, height: visible.height)
-        (backgroundColor.blended(withFraction: 0.05, of: .black) ?? backgroundColor).setFill()
-        gutterRect.fill()
-        _ = scrollView
-    }
+    override func drawHashMarksAndLabels(in rect: NSRect) {
+        guard
+            let textView = clientView as? NSTextView,
+            let layoutManager = textView.layoutManager,
+            let container = textView.textContainer
+        else { return }
 
-    private func drawLineNumbers() {
-        guard let layoutManager, let container = textContainer else { return }
+        // Clip everything this method draws to the ruler's own bounds — a
+        // partially-scrolled row would otherwise paint its number a few
+        // pixels above the top edge, over the "Lines N–N" label that sits
+        // just above the scroll view.
+        NSGraphicsContext.current?.saveGraphicsState()
+        NSBezierPath(rect: bounds).setClip()
+        defer { NSGraphicsContext.current?.restoreGraphicsState() }
+
+        gutterBackground.setFill()
+        bounds.fill()
+
         let attrs: [NSAttributedString.Key: Any] = [.font: gutterFont, .foregroundColor: gutterColor]
-        let nsText = string as NSString
-        let length = nsText.length
+        let content = textView.string as NSString
+        let visibleRect = textView.visibleRect
+        let inset = textView.textContainerInset
+        let fullRange = NSRange(location: 0, length: content.length)
 
-        // Same line-count convention `draft.components(separatedBy: "\n")`
-        // uses elsewhere (Save computes rangeEnd from that count): a
-        // trailing "\n" gets one more, empty final line numbered too.
-        var lineNumber = startLine
-        var index = 0
-        while true {
-            let lineRange = nsText.lineRange(for: NSRange(location: index, length: 0))
-            let hasContent = lineRange.length > 0
-            let rect: NSRect
-            if hasContent {
-                let glyphRange = layoutManager.glyphRange(forCharacterRange: lineRange, actualCharacterRange: nil)
-                rect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: container)
-            } else {
-                rect = layoutManager.extraLineFragmentRect
-            }
-
-            // Same left inset for every line — one fixed number, not
-            // recomputed per line, so the gap between the gutter and the
-            // code text is identical for every row.
-            let y = rect.minY + textContainerInset.height
-            let label = "\(lineNumber)"
+        func drawNumber(_ n: Int, at y: CGFloat) {
+            // Only rows whose baseline sits within the gutter get a number;
+            // the clip above still trims a row straddling an edge.
+            guard y > -gutterFont.pointSize, y < bounds.height else { return }
+            let label = "\(n)" as NSString
             let size = label.size(withAttributes: attrs)
-            label.draw(at: NSPoint(x: gutterWidth - size.width - 8, y: y), withAttributes: attrs)
-            lineNumber += 1
+            label.draw(at: NSPoint(x: ruleThickness - size.width - 6, y: y), withAttributes: attrs)
+        }
 
-            if !hasContent { break }
-            index = NSMaxRange(lineRange)
-            guard index < length else {
-                if length > 0 && nsText.character(at: length - 1) == 10 { continue }
-                break
-            }
+        // Walk every logical (`\n`-delimited) line from the top of the
+        // slice. The whole slice is small — this is simpler and less
+        // error-prone than trying to seed the count from the first visible
+        // character, which is what the earlier version got wrong.
+        var lineIndex = 0
+        content.enumerateSubstrings(
+            in: fullRange, options: [.byLines, .substringNotRequired]
+        ) { _, lineRange, _, _ in
+            let glyphRange = layoutManager.glyphRange(forCharacterRange: lineRange, actualCharacterRange: nil)
+            let frag = layoutManager.lineFragmentRect(
+                forGlyphAt: glyphRange.location, effectiveRange: nil, withoutAdditionalLayout: true
+            )
+            drawNumber(self.startLine + lineIndex, at: frag.minY + inset.height - visibleRect.minY)
+            lineIndex += 1
+        }
+
+        // A trailing '\n' leaves one more (empty) line that enumerateSubstrings
+        // doesn't emit — matches `components(separatedBy: "\n")`.
+        if content.length > 0, content.character(at: content.length - 1) == 10 {
+            let extra = layoutManager.extraLineFragmentRect
+            drawNumber(startLine + lineIndex, at: extra.minY + inset.height - visibleRect.minY)
         }
     }
 }
