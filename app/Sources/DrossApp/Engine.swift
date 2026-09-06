@@ -204,6 +204,80 @@ enum Engine {
         return VerifyResult(ok: false, message: "Typecheck failed:\n\(clipped)")
     }
 
+    /// Post-fix check: runs the repo's own `test` script — the first check
+    /// in this engine that actually *executes* the target repo's code
+    /// rather than just reading it (every other check, including
+    /// typecheck, only parses/analyzes). That's not a new trust boundary in
+    /// practice — a repo opened here is already one you'd run `npm test`
+    /// on yourself — but it's a real behavioral difference worth a hard
+    /// timeout: a runaway suite (or an accidentally-triggered watch mode)
+    /// shouldn't be able to hang the app indefinitely.
+    static func runTests(repoPath: String) -> VerifyResult {
+        let fm = FileManager.default
+        let packageJSON = (repoPath as NSString).appendingPathComponent("package.json")
+        guard let data = fm.contents(atPath: packageJSON),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let scripts = json["scripts"] as? [String: Any],
+              let testScript = scripts["test"] as? String,
+              !testScript.isEmpty,
+              !testScript.contains("no test specified")  // npm's own placeholder default
+        else {
+            return VerifyResult(ok: true, message: "No test script in package.json — skipped.")
+        }
+
+        let manager: String
+        if fm.fileExists(atPath: (repoPath as NSString).appendingPathComponent("pnpm-lock.yaml")) {
+            manager = "pnpm"
+        } else if fm.fileExists(atPath: (repoPath as NSString).appendingPathComponent("yarn.lock")) {
+            manager = "yarn"
+        } else if fm.fileExists(atPath: (repoPath as NSString).appendingPathComponent("bun.lockb")) {
+            manager = "bun"
+        } else {
+            manager = "npm"
+        }
+
+        let process = Process()
+        // /usr/bin/env resolves via the user's PATH — npm/pnpm/yarn/bun are
+        // always global tools (installed by nvm/volta/Homebrew/corepack),
+        // never a project-local binary the way a test *framework* can be,
+        // so there's no repo-controlled-binary risk here the way there is
+        // for tsc above.
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = [manager, "test"]
+        process.currentDirectoryURL = URL(fileURLWithPath: repoPath)
+        let stdout = Pipe()
+        let stderr = Pipe()
+        process.standardOutput = stdout
+        process.standardError = stderr
+
+        do {
+            try process.run()
+        } catch {
+            return VerifyResult(ok: false, message: "Could not run \(manager) test: \(error.localizedDescription)")
+        }
+
+        let timeoutSeconds: TimeInterval = 120
+        let deadline = DispatchTime.now() + timeoutSeconds
+        let exited = DispatchSemaphore(value: 0)
+        DispatchQueue.global(qos: .utility).async {
+            process.waitUntilExit()
+            exited.signal()
+        }
+        if exited.wait(timeout: deadline) == .timedOut {
+            process.terminate()
+            return VerifyResult(ok: false, message: "Tests timed out after \(Int(timeoutSeconds))s — terminated (check for a watch-mode flag in the test script).")
+        }
+
+        let err = String(data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        let out = String(data: stdout.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        if process.terminationStatus == 0 {
+            return VerifyResult(ok: true, message: "Tests passed (\(manager) test).")
+        }
+        let blob = (out + "\n" + err).trimmingCharacters(in: .whitespacesAndNewlines)
+        let clipped = blob.split(separator: "\n").suffix(12).joined(separator: "\n")
+        return VerifyResult(ok: false, message: "Tests failed:\n\(clipped)")
+    }
+
     struct CommitResult {
         let ok: Bool
         let message: String

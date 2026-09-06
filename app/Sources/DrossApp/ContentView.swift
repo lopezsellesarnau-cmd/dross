@@ -591,6 +591,11 @@ struct ContentView: View {
             do {
                 let result = try Engine.scan(repoPath: self.repoPath)
                 let compile = Engine.verify(repoPath: self.repoPath)
+                // Tests run after typecheck, not in parallel — a broken
+                // build makes test output noise anyway, and this keeps
+                // resource usage (and what's on screen) predictable: one
+                // check running at a time.
+                let tests = Engine.runTests(repoPath: self.repoPath)
                 DispatchQueue.main.async {
                     self.report = result
                     self.onScanComplete?(self.repoPath, result)
@@ -601,7 +606,10 @@ struct ContentView: View {
                     let compileLine = compile.ok
                         ? compile.message
                         : "Typecheck failed (repo syntax/types — not a Dross crash):\n\(compile.message)"
-                    self.verifyMessage = scanLine + "\n" + compileLine
+                    let testLine = tests.ok
+                        ? tests.message
+                        : "Tests failed (repo's own test suite — not a Dross crash):\n\(tests.message)"
+                    self.verifyMessage = scanLine + "\n" + compileLine + "\n" + testLine
                 }
             } catch {
                 DispatchQueue.main.async {
