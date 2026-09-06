@@ -169,7 +169,8 @@ struct CodeFixPopup: View {
                         startLine: rangeStart,
                         fontSize: editorFontSize,
                         textColor: NSColor(Theme.ink),
-                        gutterColor: NSColor(Theme.inkAlpha(0.32))
+                        gutterColor: NSColor(Theme.inkAlpha(0.4)),
+                        backgroundColor: NSColor(pageBackground)
                     )
                     .padding(.horizontal, 6)
                     .onChange(of: draft) { _, _ in
