@@ -74,15 +74,16 @@ struct ShipAssistRail: View {
                     .foregroundStyle(Theme.inkAlpha(0.45))
             } else if let report {
                 let n = report.openCount
+                let clear = n == 0 && !report.truncated
                 HStack(alignment: .firstTextBaseline, spacing: f(8)) {
                     Circle()
-                        .fill(n == 0 ? Theme.inkAlpha(0.28) : Theme.rust)
+                        .fill(clear ? Theme.inkAlpha(0.28) : Theme.rust)
                         .frame(width: f(8), height: f(8))
                         .offset(y: -1)
-                    Text(n == 0 ? "Clear to ship" : "\(n) open")
+                    Text(n > 0 ? "\(n) open" : report.truncated ? "Partial scan" : "Clear to ship")
                         .font(.system(size: f(22), weight: .light, design: .default))
                         .tracking(-0.6)
-                        .foregroundStyle(n == 0 ? Theme.ink : Theme.rust)
+                        .foregroundStyle(clear ? Theme.ink : Theme.rust)
                         .monospacedDigit()
                 }
                 Text(report.llmUsed == true

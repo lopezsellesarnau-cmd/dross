@@ -278,7 +278,8 @@ struct ContentView: View {
         return VStack(alignment: .leading, spacing: f(14)) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: f(10)) {
-                    Text(open == 0 ? "Clear to ship." : "Review before ship.")
+                    // A truncated scan never reads as clear — part of the tree wasn't checked.
+                    Text(open > 0 ? "Review before ship." : report.truncated ? "Partial scan — not clear." : "Clear to ship.")
                         .font(.system(size: f(36), weight: .bold, design: .default))
                         .tracking(-0.8)
                         .foregroundStyle(Theme.ink)
@@ -333,9 +334,9 @@ struct ContentView: View {
             findingsList(report, f: f)
 
             if report.truncated {
-                Text("Stopped early at the file cap — point Dross at a narrower repo path.")
+                Text("Stopped early at the file cap — part of this repo was never checked. Point Dross at a narrower path.")
                     .font(.system(size: f(11), design: .monospaced))
-                    .foregroundStyle(Theme.inkAlpha(0.5))
+                    .foregroundStyle(Theme.rust)
             }
 
             QualityGatePanel(
