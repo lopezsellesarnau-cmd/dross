@@ -11,7 +11,35 @@ the way.)*
 
 ## Status
 
-v1 in progress. Deterministic checks + SwiftUI Mac app + CLI for CI.
+v1 on `main`: TypeScript engine + SwiftUI Mac app + CLI for CI. Same scan
+locally and in GitHub Actions. Distribution is a notarized DMG (not Mac App
+Store — the tool has to read arbitrary folders and shell out to `git` / `tsc`).
+
+## Mac app
+
+Open a repo (folder picker) → scan → findings. High-confidence items show by
+default; low-confidence ones sit behind “N low”. Regressions (fixed, then
+back) are tagged `↻`.
+
+**Fix session** (the panel on a finding):
+
+- **Save changes** writes the visible slice to disk. It does **not** re-scan
+  and does **not** jump to the next finding. You get a confirmation, then
+  re-scan when you want the list to update.
+- **Skip** moves to the next finding without writing.
+- **Ignore** mutes the finding in `.dross/memory.json` (same file the CLI
+  uses) so CI won’t fail on it.
+- **Auto-correct** runs only for verified rewrites (`remove-export`,
+  `delete-dead`, `add-env-example`). If the rewrite breaks typecheck **on that
+  file**, it is reverted.
+- **VS Code** opens the file at the finding’s line.
+
+```bash
+cd app && ./rebuild.sh
+```
+
+Auth in v1 is a **local stub** (Continue locally). Nothing leaves the Mac.
+Cloud auth is deferred.
 
 ## CLI (CI)
 
@@ -30,15 +58,17 @@ npx dross scan ./trace-app --also ./trace-backend --json
 # Human-readable:
 npx dross scan ./apps/web
 
-# Verified autofix (dead exports)
+# Verified autofix
 npx dross fix . path/to/file.ts 42 remove-export
+npx dross fix . path/to/file.ts 12 add-env-example
 
 # Mute a finding so it no longer fails CI (stores in .dross/memory.json)
 npx dross mute . helpers.ts 4 --reason "exported for a plugin"
 npx dross unmute . helpers.ts 4
 ```
 
-`.dross/memory.json` is **per-user by default** — add `.dross/` to `.gitignore` unless the team wants to share mute/acknowledge decisions in git.
+`.dross/memory.json` is **per-user by default** — add `.dross/` to `.gitignore`
+unless the team wants to share mute/acknowledge decisions in git.
 
 GitHub Actions sketch:
 
@@ -68,7 +98,7 @@ npx dross license deactivate
 DROSS_LICENSE_KEY=<key> ANTHROPIC_API_KEY=<key> npx dross scan . --json
 ```
 
-In the Mac app, use the **FREE · UPGRADE / PRO** button in the home header to
+In the Mac app, use the **FREE · UPGRADE / PRO** control in the home header to
 enter a license key and your Anthropic key.
 
 Licenses are Ed25519-signed and verified offline (embedded public key) — no
@@ -87,21 +117,6 @@ node scripts/mint-license.mjs buyer@example.com pro --days 365 # subscription
 
 Keep `license-private.pem` secret and backed up outside the repo — losing it
 means re-keying (invalidates all issued licenses); leaking it lets anyone mint.
-
-## Mac app
-
-```bash
-cd app && ./rebuild.sh
-```
-
-Flow: Welcome → local auth stub → onboarding → **open repo** (folder picker) →
-scan → detail. Auth is a **local stub** in v1 (Continue locally / fake sign-in);
-nothing leaves the Mac. Cloud auth is deferred.
-
-The detail view uses the same memory file as the CLI (`.dross/memory.json`).
-**Ignore** in the fix panel mutes a finding. High-confidence findings show by
-default; low-confidence ones sit behind “N low”. Regressions (fixed, then back)
-are tagged `↻`.
 
 ## Packaging (DMG)
 
@@ -127,7 +142,7 @@ password stored via `xcrun notarytool store-credentials`.
 
 TypeScript engine (`src/`) → JSON report. SwiftUI app shells out to the bundled
 engine. Same CLI for local and CI. Deterministic checks first; optional LLM only
-for semantic drift when a key is present.
+for semantic drift when a key and license are present.
 
 Checks: `dead-exports`, `contract-drift`, `env-drift`, `todo-density`,
-`hardcoded-demo`. Autofix: `remove-export`, `delete-dead`.
+`hardcoded-demo`. Autofix: `remove-export`, `delete-dead`, `add-env-example`.
