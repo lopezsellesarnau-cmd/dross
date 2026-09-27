@@ -86,11 +86,18 @@ struct ShipAssistRail: View {
                         .foregroundStyle(clear ? Theme.ink : Theme.rust)
                         .monospacedDigit()
                 }
-                Text(report.llmUsed == true
-                     ? "Deterministic + LLM drift pass"
-                     : "Local deterministic checks")
-                    .font(.system(size: f(11), design: .default))
-                    .foregroundStyle(Theme.inkAlpha(0.42))
+                if let llmError = report.llmError {
+                    Text("LLM drift pass failed — \(llmError). Low-confidence drift shown unreviewed.")
+                        .font(.system(size: f(11), design: .default))
+                        .foregroundStyle(Theme.rust)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    Text(report.llmUsed == true
+                         ? "Deterministic + LLM drift pass"
+                         : "Local deterministic checks")
+                        .font(.system(size: f(11), design: .default))
+                        .foregroundStyle(Theme.inkAlpha(0.42))
+                }
             } else {
                 Text("Waiting for scan")
                     .font(.system(size: f(16), weight: .semibold, design: .default))

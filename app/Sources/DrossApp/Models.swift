@@ -59,12 +59,15 @@ struct ScanReport: Codable {
     /// Anthropic key was present but the LLM drift pass was withheld for lack
     /// of a Pro license — drives the in-app upgrade prompt.
     let llmGated: Bool?
+    /// The LLM drift pass was attempted and failed (network, timeout, API
+    /// error) — low-confidence drift is shown unreviewed.
+    let llmError: String?
 
     var openFindings: [Finding] { findings.filter { !$0.muted } }
     var mutedCount: Int { findings.filter(\.muted).count }
     var openCount: Int { openFindings.count }
 
-    init(repoRoot: String, filesScanned: Int, findings: [Finding], generatedAt: Double, truncated: Bool, llmUsed: Bool? = nil, llmGated: Bool? = nil) {
+    init(repoRoot: String, filesScanned: Int, findings: [Finding], generatedAt: Double, truncated: Bool, llmUsed: Bool? = nil, llmGated: Bool? = nil, llmError: String? = nil) {
         self.repoRoot = repoRoot
         self.filesScanned = filesScanned
         self.findings = findings
@@ -72,5 +75,6 @@ struct ScanReport: Codable {
         self.truncated = truncated
         self.llmUsed = llmUsed
         self.llmGated = llmGated
+        self.llmError = llmError
     }
 }
