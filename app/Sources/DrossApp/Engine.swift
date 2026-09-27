@@ -161,25 +161,57 @@ enum Engine {
             return VerifyResult(ok: true, message: "No tsconfig.json — skipped typecheck. Re-scan still ran.")
         }
 
-        // Global tsc first, repo-local node_modules/.bin/tsc only as a
-        // fallback — a repo-local binary is controlled by whatever that
-        // repo's package.json pulled in, so preferring it means Dross would
-        // execute attacker-controlled code from a repo it's merely scanning,
-        // with the user's full permissions and no sandbox (the same failure
-        // class as CodeRabbit's 2025 RCE, which ran a target repo's own
-        // Rubocop unsandboxed). Low real-world risk today since Dross only
-        // opens folders you already trusted enough to run `npm install` on
-        // — but cheap to close now, before "scan a repo before you trust it"
-        // becomes a real use case.
-        let tscCandidates = [
+        let localTsc = (repoPath as NSString).appendingPathComponent("node_modules/.bin/tsc")
+        let globalTsc = [
             "/opt/homebrew/bin/tsc",
             "/usr/local/bin/tsc",
-            (repoPath as NSString).appendingPathComponent("node_modules/.bin/tsc"),
-        ]
-        guard let tsc = tscCandidates.first(where: { fm.isExecutableFile(atPath: $0) }) else {
+        ].first { fm.isExecutableFile(atPath: $0) }
+
+        // Expo/Next tsconfigs `extends` a package (`expo/tsconfig.base`). A
+        // Homebrew `tsc` often reports TS6053 and is a false Auto-correct
+        // failure. Use the repo's tsc when the config is package-extended;
+        // otherwise prefer global tsc (don't exec a random repo binary by
+        // default — same RCE class as unsandboxed linters).
+        let extendsPackage = tsconfigExtendsNodePackage(at: tsconfig)
+        let tscPath: String?
+        if extendsPackage, fm.isExecutableFile(atPath: localTsc) {
+            tscPath = localTsc
+        } else {
+            tscPath = globalTsc ?? (fm.isExecutableFile(atPath: localTsc) ? localTsc : nil)
+        }
+        guard let tsc = tscPath else {
             return VerifyResult(ok: true, message: "TypeScript compiler not found — skipped typecheck. Re-scan still ran.")
         }
 
+        var result = runTsc(tsc, repoPath: repoPath)
+        if !result.ok,
+           result.message.contains("TS6053"),
+           tsc != localTsc,
+           fm.isExecutableFile(atPath: localTsc) {
+            result = runTsc(localTsc, repoPath: repoPath)
+        }
+        return result
+    }
+
+    /// True when `extends` is a package name, not `./foo`.
+    private static func tsconfigExtendsNodePackage(at tsconfig: String) -> Bool {
+        guard let text = try? String(contentsOfFile: tsconfig, encoding: .utf8) else { return false }
+        if let data = text.data(using: .utf8),
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let ext = json["extends"] as? String {
+            return !ext.hasPrefix(".") && !ext.hasPrefix("/")
+        }
+        // tsconfig often has comments — JSONSerialization fails; regex fallback.
+        guard let match = text.range(of: #"\"extends\"\s*:\s*\"([^\"]+)\""#, options: .regularExpression) else {
+            return false
+        }
+        let raw = String(text[match])
+        guard let inner = raw.split(separator: "\"").dropFirst(2).first else { return false }
+        let ext = String(inner)
+        return !ext.hasPrefix(".") && !ext.hasPrefix("/")
+    }
+
+    private static func runTsc(_ tsc: String, repoPath: String) -> VerifyResult {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: tsc)
         process.arguments = ["--noEmit", "-p", repoPath]
@@ -202,6 +234,24 @@ enum Engine {
         let blob = (err + "\n" + out).trimmingCharacters(in: .whitespacesAndNewlines)
         let clipped = blob.split(separator: "\n").prefix(6).joined(separator: "\n")
         return VerifyResult(ok: false, message: "Typecheck failed:\n\(clipped)")
+    }
+
+    /// Does this typecheck blob name the file we just rewrote?
+    static func verifyMentions(file: String, result: VerifyResult) -> Bool {
+        let base = (file as NSString).lastPathComponent
+        guard !base.isEmpty else { return false }
+        return result.message.localizedCaseInsensitiveContains(base)
+    }
+
+    /// Revert Auto-correct when tsc is newly red *because of this file*.
+    /// Pre-existing errors in other files (or Expo config the global tsc
+    /// can't load) must not fail a rewrite that didn't touch them.
+    static func shouldRevertFix(before: VerifyResult, after: VerifyResult, file: String) -> Bool {
+        if after.ok { return false }
+        if before.ok { return true }
+        let afterUs = verifyMentions(file: file, result: after)
+        let beforeUs = verifyMentions(file: file, result: before)
+        return afterUs && !beforeUs
     }
 
     /// Post-fix check: runs the repo's own `test` script — the first check
