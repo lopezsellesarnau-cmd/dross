@@ -15,6 +15,9 @@ struct QualityGatePanel: View {
     private var driftCount: Int {
         report.openFindings.filter { $0.check == "contract-drift" }.count
     }
+    private var secretsCount: Int {
+        report.openFindings.filter { $0.check == "hardcoded-secrets" }.count
+    }
     private var demoCount: Int {
         report.openFindings.filter { $0.check == "hardcoded-demo" }.count
     }
@@ -31,6 +34,7 @@ struct QualityGatePanel: View {
     private var conditions: [(ok: Bool, label: String)] {
         [
             (!truncated, truncated ? "Scan complete (not truncated)" : "Scan covered the tree"),
+            (secretsCount == 0, secretsCount == 0 ? "No hardcoded secrets" : "\(secretsCount) secrets exposed"),
             (driftCount == 0, driftCount == 0 ? "No contract drift" : "\(driftCount) contract-drift open"),
             (demoCount == 0, demoCount == 0 ? "No hardcoded demo data" : "\(demoCount) demo-data hits"),
             (hardFindings == 0, hardFindings == 0 ? "No blocking findings" : "\(hardFindings) blocking findings"),

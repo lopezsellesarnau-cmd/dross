@@ -5,7 +5,7 @@ import { checkContractDrift, summarizeDriftSurfaces } from './checks/contractDri
 import { checkTodoDensity } from './checks/todoDensity.js'
 import { checkHardcodedDemo } from './checks/hardcodedDemo.js'
 import { checkEnvDrift } from './checks/envDrift.js'
-import { checkSecrets, checkTrackedSecretFiles } from './checks/secrets.js'
+import { checkRepoSecrets } from './checks/secrets.js'
 import { judgeContractDrift } from './llm/driftJudge.js'
 import { scoreConfidence } from './confidence.js'
 import { licenseStatus } from './license.js'
@@ -24,7 +24,6 @@ export async function runScan(roots: string[]): Promise<Report> {
     ...checkContractDrift(files),
     ...checkTodoDensity(files),
     ...checkHardcodedDemo(files),
-    ...checkSecrets(files),
   ]
 
   // Env files live per package — check each root against its own files.
@@ -33,11 +32,12 @@ export async function runScan(roots: string[]): Promise<Report> {
     findings.push(...checkEnvDrift(root, owned))
   }
 
-  // Committed .env / key files — the source walk skips dotfiles and non-code
-  // extensions, so ask git what is actually tracked. Companion roots use the
-  // same basename prefix as collectSourceFilesMulti.
+  // Secrets look past the JS/TS walk: every file git would ship (any
+  // language, config, dotfiles) plus local .env files feeding the bundle.
+  // Companion roots use the same basename prefix as collectSourceFilesMulti.
   roots.forEach((root, i) => {
-    findings.push(...checkTrackedSecretFiles(root, i === 0 ? '' : basename(root)))
+    const owned = files.filter((f) => (f.root ?? roots[0]) === root)
+    findings.push(...checkRepoSecrets(root, i === 0 ? '' : basename(root), owned))
   })
 
   for (const f of findings) {

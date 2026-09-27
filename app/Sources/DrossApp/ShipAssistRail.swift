@@ -14,6 +14,7 @@ struct ShipAssistRail: View {
     private func f(_ base: CGFloat) -> CGFloat { base * scale }
 
     private static let checkOrder = [
+        "hardcoded-secrets",
         "contract-drift",
         "env-drift",
         "dead-exports",
@@ -22,6 +23,7 @@ struct ShipAssistRail: View {
     ]
 
     private static let checkBlurb: [String: String] = [
+        "hardcoded-secrets": "Live API keys, private keys, or a committed .env — leaked on push.",
         "contract-drift": "Routes, HTTP methods, and auth headers — app ↔ API agreement.",
         "env-drift": "process.env used in code but missing from .env.example — deploy bombs.",
         "dead-exports": "Unused exports — strip keyword or delete the dead block.",

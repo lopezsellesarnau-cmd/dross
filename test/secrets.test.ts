@@ -4,7 +4,7 @@ import { execFileSync } from 'node:child_process'
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { checkSecrets, checkTrackedSecretFiles } from '../src/checks/secrets.js'
+import { checkSecrets, checkRepoSecrets } from '../src/checks/secrets.js'
 import type { SourceFile } from '../src/scan.js'
 
 // Fake keys are assembled at runtime so no key-shaped literal lives in the
@@ -76,25 +76,26 @@ describe('hardcoded-secrets: files tracked by git', () => {
       ['.env', 'deploy.pem', 'AuthKey_ABC123.p8'],
     )
     try {
-      const files = checkTrackedSecretFiles(dir).map((f) => f.file).sort()
+      const files = checkRepoSecrets(dir).map((f) => f.file).sort()
       assert.deepEqual(files, ['.env', 'AuthKey_ABC123.p8', 'deploy.pem'])
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
   })
 
-  it('ignores templates, empty env files, public certs and untracked secrets', () => {
+  it('ignores templates, empty env files, public certs and a gitignored .env', () => {
     const dir = repo(
       {
+        '.gitignore': '.env\n',
         '.env.example': 'DATABASE_URL=postgres://localhost/db\n',
         '.env.production': 'API_KEY=\n# comment\n',
         'cert.pem': '-----BEGIN CERTIFICATE-----\nabc\n',
         '.env': 'SECRET=real\n',
       },
-      ['.env.example', '.env.production', 'cert.pem'],
+      ['.gitignore', '.env.example', '.env.production', 'cert.pem'],
     )
     try {
-      assert.deepEqual(checkTrackedSecretFiles(dir), [])
+      assert.deepEqual(checkRepoSecrets(dir), [])
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
@@ -103,17 +104,89 @@ describe('hardcoded-secrets: files tracked by git', () => {
   it('treats .env.development as a warning, not a blocker-grade finding', () => {
     const dir = repo({ '.env.development': 'VITE_API=http://localhost:3000\n' }, ['.env.development'])
     try {
-      const [f] = checkTrackedSecretFiles(dir)
+      const [f] = checkRepoSecrets(dir)
       assert.equal(f.severity, 'warning')
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
   })
 
-  it('returns nothing outside a git repo', () => {
+  it('flags a .env that is untracked but not gitignored (next `git add .` commits it)', () => {
+    const dir = repo({ '.env': 'SECRET=real\n', 'a.ts': 'x' }, ['a.ts'])
+    try {
+      const [f] = checkRepoSecrets(dir)
+      assert.equal(f.file, '.env')
+      assert.match(f.message, /not in \.gitignore/)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('finds keys in any language or config file, not just JS/TS', () => {
+    const dir = repo(
+      {
+        'main.py': `client = Anthropic(api_key="${KEYS.anthropic}")\n`,
+        'app.json': `{\n  "stripe": "${KEYS.stripe}"\n}\n`,
+        'logo.png': KEYS.aws,
+      },
+      ['main.py', 'app.json', 'logo.png'],
+    )
+    try {
+      const hits = checkRepoSecrets(dir).map((f) => `${f.file}:${f.line}`).sort()
+      assert.deepEqual(hits, ['app.json:2', 'main.py:1'])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('outside a git repo, falls back to the collected sources', () => {
     const dir = mkdtempSync(join(tmpdir(), 'dross-nogit-'))
     try {
-      assert.deepEqual(checkTrackedSecretFiles(dir), [])
+      assert.deepEqual(checkRepoSecrets(dir), [])
+      assert.equal(checkRepoSecrets(dir, '', [src(`const k = '${KEYS.github}'`)]).length, 1)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('hardcoded-secrets: client-public env vars', () => {
+  function dirWith(files: Record<string, string>): string {
+    const dir = mkdtempSync(join(tmpdir(), 'dross-pubenv-'))
+    for (const [name, body] of Object.entries(files)) writeFileSync(join(dir, name), body)
+    return dir
+  }
+
+  it('flags a secret key in an EXPO_PUBLIC_ var, even in a gitignored .env', () => {
+    const dir = dirWith({ '.env': `EXPO_PUBLIC_API_URL=https://api.x.com\nEXPO_PUBLIC_OPENAI=${KEYS.openai}\n` })
+    try {
+      const [f, ...rest] = checkRepoSecrets(dir)
+      assert.equal(rest.length, 0)
+      assert.equal(f.line, 2)
+      assert.match(f.message, /baked into the app\/web bundle/)
+      assert.ok(!f.message.includes(KEYS.openai))
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('flags secret-named public vars in env files and in code', () => {
+    const dir = dirWith({ '.env.local': 'NEXT_PUBLIC_SUPABASE_SERVICE_ROLE=abc\n' })
+    try {
+      const code = src(`const s = process.env.VITE_STRIPE_${'SECRET'}\n`, 'web/pay.ts')
+      const files = checkRepoSecrets(dir, '', [code]).map((f) => `${f.file}:${f.line}`).sort()
+      assert.deepEqual(files, ['.env.local:1', 'web/pay.ts:1'])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('leaves public-by-design keys alone', () => {
+    const dir = dirWith({
+      '.env': 'NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOi\nEXPO_PUBLIC_STRIPE_KEY=pk_live_abc123\nSTRIPE_SECRET=real\n',
+    })
+    try {
+      assert.deepEqual(checkRepoSecrets(dir), [])
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
