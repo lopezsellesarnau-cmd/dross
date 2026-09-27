@@ -37,6 +37,19 @@ export type JudgeResult = {
   drop: Finding[]
 }
 
+/**
+ * What the LLM pass actually did. `skipped` = nothing to judge (no key, or
+ * no client/server surface); `failed` = it tried and could not — callers
+ * must say so rather than report the pass as having run.
+ */
+export type JudgeOutcome = JudgeResult & {
+  status: 'ok' | 'skipped' | 'failed'
+  error?: string
+}
+
+/** Hard cap on the API call — the Mac app kills the whole engine at 90s. */
+const LLM_TIMEOUT_MS = 30_000
+
 function formatRoutes(routes: DriftRoute[]): string {
   if (routes.length === 0) return '(none)'
   return routes
@@ -247,11 +260,12 @@ function reportFromToolInput(input: unknown): LlmDriftReport | null {
 export async function judgeContractDrift(
   surface: DriftSurface,
   candidates: Finding[] = [],
-): Promise<JudgeResult> {
-  const empty: JudgeResult = { extra: [], drop: [] }
+): Promise<JudgeOutcome> {
+  const skipped: JudgeOutcome = { extra: [], drop: [], status: 'skipped' }
+  const failed = (error: string): JudgeOutcome => ({ extra: [], drop: [], status: 'failed', error })
   const key = process.env.ANTHROPIC_API_KEY
-  if (!key) return empty
-  if (surface.server.length === 0 || surface.client.length === 0) return empty
+  if (!key) return skipped
+  if (surface.server.length === 0 || surface.client.length === 0) return skipped
 
   const body = {
     model: 'claude-sonnet-4-20250514',
@@ -268,8 +282,11 @@ export async function judgeContractDrift(
     messages: [{ role: 'user', content: promptFor(surface, candidates) }],
   }
 
+  // Optional pass — a failure must not fail the scan, but it must be
+  // reported as failed, never as "ran and found nothing".
+  let res: Response
   try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
+    res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -277,8 +294,23 @@ export async function judgeContractDrift(
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(LLM_TIMEOUT_MS),
     })
-    if (!res.ok) return empty
+  } catch (err) {
+    const timedOut = err instanceof Error && err.name === 'TimeoutError'
+    return failed(timedOut ? `timed out after ${LLM_TIMEOUT_MS / 1000}s` : 'network error — could not reach the Anthropic API')
+  }
+  if (!res.ok) {
+    let detail = ''
+    try {
+      const data = (await res.json()) as { error?: { message?: string } }
+      detail = data.error?.message ? ` — ${data.error.message.slice(0, 160)}` : ''
+    } catch {
+      // body not JSON — status code alone is enough
+    }
+    return failed(`Anthropic API returned ${res.status}${detail}`)
+  }
+  try {
     const data = (await res.json()) as {
       content?: { type: string; text?: string; name?: string; input?: unknown }[]
     }
@@ -287,10 +319,9 @@ export async function judgeContractDrift(
     const fromTool = tool ? reportFromToolInput(tool.input) : null
     const fromText = parseJudgeReport(blocks.find((c) => c.type === 'text')?.text ?? '')
     const report = fromTool ?? fromText
-    if (!report) return empty
-    return applyJudge(report, surface, candidates)
+    if (!report) return failed('unreadable response from the model')
+    return { ...applyJudge(report, surface, candidates), status: 'ok' }
   } catch {
-    // Optional pass — a network/parse failure must not fail the scan.
-    return empty
+    return failed('unreadable response from the model')
   }
 }

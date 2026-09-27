@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { applyJudge, extractJsonObject, parseJudgeReport } from '../src/llm/driftJudge.js'
+import { applyJudge, extractJsonObject, judgeContractDrift, parseJudgeReport } from '../src/llm/driftJudge.js'
 import type { DriftSurface } from '../src/checks/contractDrift.js'
 import type { Finding } from '../src/report.js'
 
@@ -77,4 +77,63 @@ test('applyJudge ignores suppress that does not match a candidate', () => {
     [candidate()],
   )
   assert.equal(drop.length, 0)
+})
+
+/** Run `fn` with a fake Anthropic key and a stubbed global fetch. */
+async function withFetch<T>(impl: typeof fetch, fn: () => Promise<T>): Promise<T> {
+  const realFetch = globalThis.fetch
+  const realKey = process.env.ANTHROPIC_API_KEY
+  globalThis.fetch = impl
+  process.env.ANTHROPIC_API_KEY = 'test-key'
+  try {
+    return await fn()
+  } finally {
+    globalThis.fetch = realFetch
+    if (realKey === undefined) delete process.env.ANTHROPIC_API_KEY
+    else process.env.ANTHROPIC_API_KEY = realKey
+  }
+}
+
+test('judgeContractDrift reports an API error as failed, with the reason', async () => {
+  const out = await withFetch(
+    async () => new Response(JSON.stringify({ error: { message: 'model not found' } }), { status: 404 }),
+    () => judgeContractDrift(surface, [candidate()]),
+  )
+  assert.equal(out.status, 'failed')
+  assert.match(out.error ?? '', /404 — model not found/)
+  assert.deepEqual(out.drop, [])
+})
+
+test('judgeContractDrift reports a network error as failed, never as ran', async () => {
+  const out = await withFetch(
+    async () => {
+      throw new TypeError('fetch failed')
+    },
+    () => judgeContractDrift(surface, [candidate()]),
+  )
+  assert.equal(out.status, 'failed')
+  assert.match(out.error ?? '', /network error/)
+})
+
+test('judgeContractDrift is ok only when the model answers', async () => {
+  const c = candidate()
+  const body = {
+    content: [{ type: 'tool_use', name: 'report_drift', input: { suppress: [{ file: c.file, line: c.line }], items: [] } }],
+  }
+  const out = await withFetch(
+    async () => new Response(JSON.stringify(body), { status: 200 }),
+    () => judgeContractDrift(surface, [c]),
+  )
+  assert.equal(out.status, 'ok')
+  assert.deepEqual(out.drop, [c])
+})
+
+test('judgeContractDrift skips (does not fail) with no key', async () => {
+  const realKey = process.env.ANTHROPIC_API_KEY
+  delete process.env.ANTHROPIC_API_KEY
+  try {
+    assert.equal((await judgeContractDrift(surface, [])).status, 'skipped')
+  } finally {
+    if (realKey !== undefined) process.env.ANTHROPIC_API_KEY = realKey
+  }
 })

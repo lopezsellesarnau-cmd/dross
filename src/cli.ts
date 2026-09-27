@@ -73,6 +73,7 @@ function printReport(report: Report, annotated: AnnotatedFinding[]) {
   console.log(`\nDROSS · ${report.repoRoot}`)
   console.log(`${report.filesScanned} files scanned · ${open} findings`)
   if (report.llmUsed) console.log(`LLM drift pass: on`)
+  if (report.llmError) console.log(`LLM drift pass: FAILED (${report.llmError}) — low-confidence drift was not reviewed; showing it unfiltered.`)
   if (report.llmGated) console.log(`LLM drift pass: locked — Pro license required (\`dross license activate <key>\`)`)
   if (report.truncated) {
     console.log(`⚠ Stopped early at the file cap — this repo (or directory) is larger than a single scan covers. Point Dross at a narrower path. Failing the scan: part of the tree was never checked.`)

@@ -51,6 +51,7 @@ export async function runScan(roots: string[]): Promise<Report> {
   // extras only for paths already on the extracted surface.
   let llmUsed = false
   let llmGated = false
+  let llmError: string | undefined
   if (process.env.ANTHROPIC_API_KEY) {
     if (licenseStatus().valid) {
       const surface = summarizeDriftSurfaces(files)
@@ -68,11 +69,9 @@ export async function runScan(roots: string[]): Promise<Report> {
         extra.confidence = scoreConfidence(extra)
         findings.push(extra)
       }
-      if (judged.extra.length || judged.drop.length) {
-        llmUsed = true
-      } else if (surface.server.length && surface.client.length) {
-        llmUsed = true
-      }
+      // Only claim the pass ran when the model actually answered.
+      llmUsed = judged.status === 'ok'
+      if (judged.status === 'failed') llmError = judged.error
     } else {
       // Key present but unlicensed — tell the caller so it can prompt to upgrade.
       llmGated = true
@@ -89,5 +88,6 @@ export async function runScan(roots: string[]): Promise<Report> {
     truncated,
     llmUsed,
     llmGated,
+    llmError,
   }
 }
