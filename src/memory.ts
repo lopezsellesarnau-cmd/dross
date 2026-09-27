@@ -142,6 +142,15 @@ export function blockingCount(annotated: AnnotatedFinding[]): number {
   return annotated.filter((f) => !f.muted).length
 }
 
+/**
+ * Exit code for `dross scan`. A truncated scan fails even with zero
+ * findings: "nothing found" in a partial scan means "not checked", and a
+ * safeguard has to fail closed, not report clear.
+ */
+export function scanExitCode(annotated: AnnotatedFinding[], truncated: boolean): number {
+  return truncated || blockingCount(annotated) > 0 ? 1 : 0
+}
+
 export function matchFinding(findings: Finding[], file: string, line: number): Finding | undefined {
   return findings.find((f) => f.file === file && f.line === line)
 }

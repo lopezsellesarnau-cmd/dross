@@ -7,7 +7,7 @@ import { fixDeleteDead } from './fix/deleteDead.js'
 import { fixAddEnvExample } from './fix/addEnvExample.js'
 import {
   applyMemory,
-  blockingCount,
+  scanExitCode,
   loadMemory,
   matchFinding,
   saveMemory,
@@ -75,13 +75,13 @@ function printReport(report: Report, annotated: AnnotatedFinding[]) {
   if (report.llmUsed) console.log(`LLM drift pass: on`)
   if (report.llmGated) console.log(`LLM drift pass: locked — Pro license required (\`dross license activate <key>\`)`)
   if (report.truncated) {
-    console.log(`⚠ Stopped early at the file cap — this repo (or directory) is larger than a single scan covers. Point Dross at a narrower path.`)
+    console.log(`⚠ Stopped early at the file cap — this repo (or directory) is larger than a single scan covers. Point Dross at a narrower path. Failing the scan: part of the tree was never checked.`)
   }
   console.log('')
 
   const visible = annotated.filter((f) => !f.muted)
   if (visible.length === 0) {
-    console.log('Clear to ship — no findings.\n')
+    console.log(report.truncated ? 'No findings in the part that was scanned — NOT clear to ship.\n' : 'Clear to ship — no findings.\n')
     if (muted > 0) console.log(`${muted} muted\n`)
     return
   }
@@ -274,7 +274,7 @@ async function main() {
   } else {
     printReport(report, annotated)
   }
-  if (blockingCount(annotated) > 0) process.exitCode = 1
+  process.exitCode = scanExitCode(annotated, report.truncated)
 }
 
 main().catch((err) => {

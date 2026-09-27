@@ -4,6 +4,7 @@ import type { Finding } from '../src/report.js'
 import {
   applyMemory,
   blockingCount,
+  scanExitCode,
   emptyMemory,
   fingerprint,
 } from '../src/memory.js'
@@ -79,5 +80,10 @@ describe('dross memory', () => {
     assert.equal(back.annotated[0].muted, true)
     assert.equal(back.annotated[0].note, 'intentional export for a plugin')
     assert.equal(back.annotated[0].confidence, 'high')
+  })
+
+  it('truncated scan fails even with zero findings (fail closed)', () => {
+    assert.equal(scanExitCode([], false), 0)
+    assert.equal(scanExitCode([], true), 1)
   })
 })
