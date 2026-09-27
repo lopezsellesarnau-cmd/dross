@@ -14,6 +14,8 @@ export function scoreConfidence(f: Finding): Confidence {
   if (f.check === 'dead-exports' && f.severity === 'finding') return 'high'
   if (f.check === 'dead-exports') return 'medium'
   if (f.check === 'hardcoded-demo') return 'high'
+  if (f.check === 'hardcoded-secrets' && f.severity === 'finding') return 'high'
+  if (f.check === 'hardcoded-secrets') return 'medium'
   if (f.check === 'todo-density') return 'medium'
   return 'medium'
 }

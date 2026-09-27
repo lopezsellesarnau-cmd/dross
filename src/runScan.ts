@@ -1,9 +1,11 @@
+import { basename } from 'node:path'
 import { collectSourceFilesMulti } from './scan.js'
 import { checkDeadExports } from './checks/deadExports.js'
 import { checkContractDrift, summarizeDriftSurfaces } from './checks/contractDrift.js'
 import { checkTodoDensity } from './checks/todoDensity.js'
 import { checkHardcodedDemo } from './checks/hardcodedDemo.js'
 import { checkEnvDrift } from './checks/envDrift.js'
+import { checkSecrets, checkTrackedSecretFiles } from './checks/secrets.js'
 import { judgeContractDrift } from './llm/driftJudge.js'
 import { scoreConfidence } from './confidence.js'
 import { licenseStatus } from './license.js'
@@ -22,6 +24,7 @@ export async function runScan(roots: string[]): Promise<Report> {
     ...checkContractDrift(files),
     ...checkTodoDensity(files),
     ...checkHardcodedDemo(files),
+    ...checkSecrets(files),
   ]
 
   // Env files live per package — check each root against its own files.
@@ -29,6 +32,13 @@ export async function runScan(roots: string[]): Promise<Report> {
     const owned = files.filter((f) => (f.root ?? roots[0]) === root)
     findings.push(...checkEnvDrift(root, owned))
   }
+
+  // Committed .env / key files — the source walk skips dotfiles and non-code
+  // extensions, so ask git what is actually tracked. Companion roots use the
+  // same basename prefix as collectSourceFilesMulti.
+  roots.forEach((root, i) => {
+    findings.push(...checkTrackedSecretFiles(root, i === 0 ? '' : basename(root)))
+  })
 
   for (const f of findings) {
     f.confidence = scoreConfidence(f)
