@@ -90,6 +90,7 @@ struct ContentView: View {
                         onFixedAndAdvance: { advanceFixSession(afterFix: true) },
                         onSkipToNext: { advanceFixSession(afterFix: false) },
                         onMute: { muteFinding($0) },
+                        onRescan: { runScan() },
                         isAdvancing: fixSessionAdvancing
                     )
                 }
@@ -538,10 +539,9 @@ struct ContentView: View {
 
     /// Advance the fix queue WITHOUT a full engine scan.
     ///
-    /// Save & next used to call `Engine.scan` on every step. That spawned a
-    /// Node process per click, could stack concurrent scans, and with a pipe
-    /// deadlock in Engine looked like a freeze / crash. Navigation is local;
-    /// the heavy re-scan happens once on "Re-scan & verify" when the queue ends.
+    /// Skip / Ignore move locally. Save only writes disk — findings stay
+    /// until the user re-scans. Full scan used to fire on every save and
+    /// stacked Node processes; keep that off this path.
     private func advanceFixSession(afterFix: Bool) {
         guard !fixSessionAdvancing else { return }
         fixSessionAdvancing = true

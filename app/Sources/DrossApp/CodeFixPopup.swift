@@ -1,8 +1,8 @@
 import SwiftUI
 import AppKit
 
-/// Fix session panel — auto-correct verified findings, then advance.
-/// Manual edit/Save for everything else. Done state → verify re-scan.
+/// Fix session panel — edit or auto-correct, then re-scan to refresh findings.
+/// Save writes the slice; it does not run typecheck or auto-advance.
 struct CodeFixPopup: View {
     let repoRoot: String
     let finding: Finding
@@ -13,6 +13,7 @@ struct CodeFixPopup: View {
     var onFixedAndAdvance: (() -> Void)? = nil
     var onSkipToNext: (() -> Void)? = nil
     var onMute: ((Finding) -> Void)? = nil
+    var onRescan: (() -> Void)? = nil
     var isAdvancing: Bool = false
 
     private let panelW: CGFloat = 460
@@ -25,8 +26,10 @@ struct CodeFixPopup: View {
     @State private var rangeEnd = 1
     @State private var loadFailed = false
     @State private var status: String?
+    @State private var savedAck = false
     @State private var dirty = false
     @State private var applying = false
+    @State private var pristine = ""
 
     private var verified: VerifiedFixer? { VerifiedFixer.fixer(for: finding) }
 
@@ -48,7 +51,7 @@ struct CodeFixPopup: View {
                 // Cap the notes block so a long finding message can't crowd
                 // the code out of the panel — it scrolls within its own strip.
                 ScrollView { meta }
-                    .frame(maxHeight: 176)
+                    .frame(maxHeight: savedAck ? 220 : 176)
                 Rectangle().fill(Theme.hair).frame(height: 1)
                 editor
                 Rectangle().fill(Theme.hair).frame(height: 1)
@@ -139,7 +142,9 @@ struct CodeFixPopup: View {
                     .foregroundStyle(Theme.inkAlpha(0.42))
             }
 
-            if let status {
+            if savedAck {
+                savedConfirmation
+            } else if let status {
                 Text(status)
                     .font(.system(size: 10, design: .monospaced))
                     .foregroundStyle(Theme.rust)
@@ -148,6 +153,35 @@ struct CodeFixPopup: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var savedConfirmation: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(Theme.ok)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Changes saved")
+                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(Theme.ink)
+                    Text("Re-scan the repo to update findings. This list won’t change until you do.")
+                        .font(.system(size: 10, design: .default))
+                        .foregroundStyle(Theme.inkAlpha(0.55))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Button(action: { onRescan?() }) {
+                Text("Re-scan to update")
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(pageBackground)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Theme.ink)
+            }
+            .buttonStyle(.plain)
+            .disabled(applying)
+        }
     }
 
     private let editorFontSize: CGFloat = 11.5
@@ -178,9 +212,9 @@ struct CodeFixPopup: View {
                     )
                     .padding(.horizontal, 6)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .onChange(of: draft) { _, _ in
-                        dirty = true
-                        status = nil
+                    .onChange(of: draft) { _, newValue in
+                        dirty = Self.normalized(newValue) != Self.normalized(pristine)
+                        if dirty { savedAck = false }
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -221,8 +255,8 @@ struct CodeFixPopup: View {
 
             Spacer(minLength: 4)
 
-            Button(action: { saveSlice(advance: true) }) {
-                Text(dirty ? "Save & next" : "Save")
+            Button(action: { saveSlice() }) {
+                Text("Save changes")
                     .font(.system(size: 11, weight: .semibold, design: .default))
                     .foregroundStyle(dirty ? pageBackground : Theme.inkAlpha(0.45))
                     .padding(.horizontal, 10)
@@ -231,6 +265,7 @@ struct CodeFixPopup: View {
             }
             .buttonStyle(.plain)
             .disabled(!dirty || loadFailed || applying || isAdvancing)
+            .help("Write this slice to disk. Re-scan to refresh findings.")
 
             if verified != nil {
                 Button(action: autoCorrect) {
@@ -243,7 +278,7 @@ struct CodeFixPopup: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(applying || loadFailed || isAdvancing)
-                .help("Apply the verified rewrite, then open the next finding")
+                .help("Apply the verified rewrite. Re-scan afterwards to update findings.")
             }
         }
         .padding(.horizontal, 14)
@@ -252,11 +287,13 @@ struct CodeFixPopup: View {
 
     private func loadSlice() {
         status = nil
+        savedAck = false
         dirty = false
         applying = false
         guard let content = try? String(contentsOfFile: filePath, encoding: .utf8) else {
             loadFailed = true
             draft = ""
+            pristine = ""
             return
         }
         loadFailed = false
@@ -266,9 +303,23 @@ struct CodeFixPopup: View {
         rangeEnd = min(allLines.count, target + contextLines)
         guard rangeStart <= rangeEnd else {
             draft = ""
+            pristine = ""
             return
         }
-        draft = allLines[(rangeStart - 1)..<rangeEnd].joined(separator: "\n")
+        let slice = allLines[(rangeStart - 1)..<rangeEnd].joined(separator: "\n")
+        pristine = slice
+        draft = slice
+        // NSTextView can rewrite the string on first layout (newline
+        // normalization). Re-baseline after that so Save stays off until a
+        // real edit.
+        DispatchQueue.main.async {
+            self.pristine = self.draft
+            self.dirty = false
+        }
+    }
+
+    private static func normalized(_ s: String) -> String {
+        s.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
     }
 
     private func autoCorrect() {
@@ -278,54 +329,55 @@ struct CodeFixPopup: View {
         let kind = verified.cliKind
         let root = repoRoot
         let file = finding.file
+        let path = filePath
+        let original = try? String(contentsOfFile: path, encoding: .utf8)
         DispatchQueue.global(qos: .userInitiated).async {
+            let before = Engine.verify(repoPath: root)
             do {
-                // resolveSource inside applyVerifiedFix handles companion paths
                 let result = try Engine.applyVerifiedFix(
                     repoPath: root, file: file, line: line, kind: kind
                 )
                 guard result.ok else {
                     DispatchQueue.main.async {
                         self.applying = false
-                        self.status = result.message
+                        self.savedAck = false
+                        self.status = "Auto-correct failed.\n\(result.message)"
                     }
                     return
                 }
-                // Proof, not trust: a deterministic rewrite can still be
-                // syntactically valid but semantically wrong (e.g. the wrong
-                // block matched a brace-balance edge case) — tsc is the
-                // oracle that catches that before the user moves on to the
-                // next finding believing this one is actually safe.
-                self.verifyAndFinish(baseMessage: result.message, root: root)
+                let after = Engine.verify(repoPath: root)
+                if Engine.shouldRevertFix(before: before, after: after, file: file) {
+                    if let original {
+                        try? original.write(toFile: path, atomically: true, encoding: .utf8)
+                    }
+                    DispatchQueue.main.async {
+                        self.applying = false
+                        self.savedAck = false
+                        self.status = "Auto-correct failed — reverted.\nThis rewrite broke typecheck for \(file).\n\(after.message)"
+                        self.loadSlice()
+                    }
+                    return
+                }
+                DispatchQueue.main.async {
+                    self.applying = false
+                    self.status = nil
+                    self.loadSlice()
+                    DispatchQueue.main.async { self.savedAck = true }
+                }
             } catch {
                 DispatchQueue.main.async {
                     self.applying = false
-                    self.status = error.localizedDescription
+                    self.status = "Auto-correct failed.\n\(error.localizedDescription)"
                 }
             }
         }
     }
 
-    /// Runs `tsc --noEmit` after a fix lands and only advances to the next
-    /// finding if it still passes — a failed typecheck stays on screen so
-    /// the user sees what broke instead of the popup moving on as if
-    /// nothing happened. Always off the main thread; `Engine.verify` shells
-    /// out to a real compiler process, which blocks.
-    private func verifyAndFinish(baseMessage: String, root: String, advanceOnSuccess: Bool = true) {
-        DispatchQueue.main.async { self.status = baseMessage + "\nVerifying…" }
-        let verify = Engine.verify(repoPath: root)
-        DispatchQueue.main.async {
-            self.applying = false
-            self.status = baseMessage + "\n" + (verify.ok ? "✓ \(verify.message)" : "✗ \(verify.message)")
-            self.dirty = false
-            if verify.ok && advanceOnSuccess {
-                self.onFixedAndAdvance?()
-            }
-        }
-    }
-
-    private func saveSlice(advance: Bool) {
+    private func saveSlice() {
+        guard dirty else { return }
         applying = true
+        savedAck = false
+        status = nil
         guard let content = try? String(contentsOfFile: filePath, encoding: .utf8) else {
             status = "Couldn't read file to save."
             applying = false
@@ -344,14 +396,10 @@ struct CodeFixPopup: View {
         do {
             try allLines.joined(separator: "\n").write(toFile: filePath, atomically: true, encoding: .utf8)
             rangeEnd = rangeStart + newLines.count - 1
-            let root = repoRoot
-            // Same "proof, not trust" step as autoCorrect — a manual edit is
-            // exactly the case most likely to introduce a real typo, so it's
-            // the one that most needs the compiler to check it before the
-            // popup tells the user it's fine.
-            DispatchQueue.global(qos: .userInitiated).async {
-                self.verifyAndFinish(baseMessage: "Saved to disk.", root: root, advanceOnSuccess: advance)
-            }
+            pristine = draft
+            dirty = false
+            applying = false
+            savedAck = true
         } catch {
             status = "Save failed: \(error.localizedDescription)"
             applying = false
