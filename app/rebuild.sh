@@ -21,6 +21,11 @@ echo "Building engine…"
 # 2) Swift app
 swift build
 
+# rm first: cp over the existing binary keeps the same inode, and macOS
+# caches code signatures per vnode — the new bytes then fail the cached
+# signature and the kernel SIGKILLs the app at launch ("Code Signature
+# Invalid"). A fresh file keeps the linker's own ad-hoc signature valid.
+rm -f Dross.app/Contents/MacOS/DrossApp
 cp .build/arm64-apple-macosx/debug/DrossApp Dross.app/Contents/MacOS/DrossApp
 rm -rf Dross.app/Contents/MacOS/DrossApp_DrossApp.bundle
 cp -r .build/arm64-apple-macosx/debug/DrossApp_DrossApp.bundle Dross.app/Contents/MacOS/
