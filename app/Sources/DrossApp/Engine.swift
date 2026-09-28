@@ -150,6 +150,36 @@ enum Engine {
     struct VerifyResult {
         let ok: Bool
         let message: String
+        /// Skipped because running it would execute code from an untrusted
+        /// repo — the UI offers "Trust this repo" when this is set.
+        var needsTrust = false
+    }
+
+    // MARK: Repo trust
+
+    /// Repos the user has explicitly trusted to run their own code (the
+    /// repo's `tsc`, its `test` script). Nothing from a repo executes until
+    /// then: a scanned folder's `node_modules/.bin` and `package.json`
+    /// scripts are whatever that repo says they are — opening a repo to
+    /// check it must not be the same as running it (the failure class of
+    /// CodeRabbit's 2025 RCE via a target repo's own Rubocop).
+    static let trustedReposDefaultsKey = "dross.trustedRepos"
+
+    private static func trustKey(_ repoPath: String) -> String {
+        URL(fileURLWithPath: repoPath).resolvingSymlinksInPath().standardizedFileURL.path
+    }
+
+    static func isTrusted(repoPath: String) -> Bool {
+        let list = UserDefaults.standard.stringArray(forKey: trustedReposDefaultsKey) ?? []
+        return list.contains(trustKey(repoPath))
+    }
+
+    static func trust(repoPath: String) {
+        var list = UserDefaults.standard.stringArray(forKey: trustedReposDefaultsKey) ?? []
+        let key = trustKey(repoPath)
+        guard !list.contains(key) else { return }
+        list.append(key)
+        UserDefaults.standard.set(list, forKey: trustedReposDefaultsKey)
     }
 
     /// Post-fix check: `tsc --noEmit` when the repo has TypeScript — proves
@@ -166,28 +196,34 @@ enum Engine {
             "/opt/homebrew/bin/tsc",
             "/usr/local/bin/tsc",
         ].first { fm.isExecutableFile(atPath: $0) }
+        // The repo's own tsc is code from the repo — only for trusted repos.
+        let trusted = isTrusted(repoPath: repoPath)
+        let hasLocal = fm.isExecutableFile(atPath: localTsc)
+        let untrustedSkip = VerifyResult(
+            ok: true,
+            message: "Typecheck skipped — it needs this repo's own tsc, which runs code from the repo. Trust the repo to allow it.",
+            needsTrust: true
+        )
 
         // Expo/Next tsconfigs `extends` a package (`expo/tsconfig.base`). A
         // Homebrew `tsc` often reports TS6053 and is a false Auto-correct
-        // failure. Use the repo's tsc when the config is package-extended;
-        // otherwise prefer global tsc (don't exec a random repo binary by
-        // default — same RCE class as unsandboxed linters).
+        // failure — those need the repo's tsc.
         let extendsPackage = tsconfigExtendsNodePackage(at: tsconfig)
         let tscPath: String?
-        if extendsPackage, fm.isExecutableFile(atPath: localTsc) {
+        if extendsPackage, hasLocal, trusted {
             tscPath = localTsc
         } else {
-            tscPath = globalTsc ?? (fm.isExecutableFile(atPath: localTsc) ? localTsc : nil)
+            tscPath = globalTsc ?? (hasLocal && trusted ? localTsc : nil)
         }
         guard let tsc = tscPath else {
+            if hasLocal && !trusted { return untrustedSkip }
             return VerifyResult(ok: true, message: "TypeScript compiler not found — skipped typecheck. Re-scan still ran.")
         }
 
         var result = runTsc(tsc, repoPath: repoPath)
-        if !result.ok,
-           result.message.contains("TS6053"),
-           tsc != localTsc,
-           fm.isExecutableFile(atPath: localTsc) {
+        if !result.ok, result.message.contains("TS6053"), tsc != localTsc, hasLocal {
+            // Global tsc can't load the package-extended config.
+            guard trusted else { return untrustedSkip }
             result = runTsc(localTsc, repoPath: repoPath)
         }
         return result
@@ -254,14 +290,10 @@ enum Engine {
         return afterUs && !beforeUs
     }
 
-    /// Post-fix check: runs the repo's own `test` script — the first check
-    /// in this engine that actually *executes* the target repo's code
-    /// rather than just reading it (every other check, including
-    /// typecheck, only parses/analyzes). That's not a new trust boundary in
-    /// practice — a repo opened here is already one you'd run `npm test`
-    /// on yourself — but it's a real behavioral difference worth a hard
-    /// timeout: a runaway suite (or an accidentally-triggered watch mode)
-    /// shouldn't be able to hang the app indefinitely.
+    /// Post-fix check: runs the repo's own `test` script — this *executes*
+    /// the repo's code, so it only runs for repos the user trusted. Hard
+    /// timeout too: a runaway suite (or an accidentally-triggered watch
+    /// mode) shouldn't be able to hang the app indefinitely.
     static func runTests(repoPath: String) -> VerifyResult {
         let fm = FileManager.default
         let packageJSON = (repoPath as NSString).appendingPathComponent("package.json")
@@ -273,6 +305,13 @@ enum Engine {
               !testScript.contains("no test specified")  // npm's own placeholder default
         else {
             return VerifyResult(ok: true, message: "No test script in package.json — skipped.")
+        }
+        guard isTrusted(repoPath: repoPath) else {
+            return VerifyResult(
+                ok: true,
+                message: "Tests skipped — running them executes this repo's code. Trust the repo to allow it.",
+                needsTrust: true
+            )
         }
 
         let manager: String
@@ -287,11 +326,8 @@ enum Engine {
         }
 
         let process = Process()
-        // /usr/bin/env resolves via the user's PATH — npm/pnpm/yarn/bun are
-        // always global tools (installed by nvm/volta/Homebrew/corepack),
-        // never a project-local binary the way a test *framework* can be,
-        // so there's no repo-controlled-binary risk here the way there is
-        // for tsc above.
+        // npm/pnpm/yarn/bun resolve globally via PATH, but the `test`
+        // script they run is the repo's — hence the trust gate above.
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         process.arguments = [manager, "test"]
         process.currentDirectoryURL = URL(fileURLWithPath: repoPath)
