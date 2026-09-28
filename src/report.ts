@@ -27,11 +27,13 @@ export type Report = {
   truncated: boolean
   /** True only when the optional LLM drift pass ran and the model answered. */
   llmUsed?: boolean
-  /** True when an Anthropic key was present but the LLM pass was withheld
+  /** True when an LLM provider key was present but the LLM pass was withheld
    *  because there's no valid Pro license — the paid upgrade prompt. */
   llmGated?: boolean
   /** Set when the LLM pass was attempted and failed (network, timeout, API
    *  error). Low-confidence drift then stays unreviewed — shown, not hidden. */
   llmError?: string
+  /** Which provider/model the LLM pass used, e.g. "openai · gpt-6-luna". */
+  llmProvider?: string
 }
 

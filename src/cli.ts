@@ -42,8 +42,10 @@ Usage:
   dross license deactivate       Remove the stored license.
   dross --help
 
-The LLM semantic-drift pass (Pro) needs BOTH a valid license and an
-ANTHROPIC_API_KEY. Deterministic checks are always free.
+The LLM semantic-drift pass (Pro) needs BOTH a valid license and your own
+key for one provider: ANTHROPIC_API_KEY, OPENAI_API_KEY, DEEPSEEK_API_KEY or
+MISTRAL_API_KEY. Pick one explicitly with DROSS_LLM_PROVIDER, override its
+model with DROSS_LLM_MODEL. Deterministic checks are always free.
 
 CI examples:
   npx dross scan . --json
@@ -72,7 +74,7 @@ function printReport(report: Report, annotated: AnnotatedFinding[]) {
   const open = annotated.length - muted
   console.log(`\nDROSS · ${report.repoRoot}`)
   console.log(`${report.filesScanned} files scanned · ${open} findings`)
-  if (report.llmUsed) console.log(`LLM drift pass: on`)
+  if (report.llmUsed) console.log(`LLM drift pass: on${report.llmProvider ? ` (${report.llmProvider})` : ''}`)
   if (report.llmError) console.log(`LLM drift pass: FAILED (${report.llmError}) — low-confidence drift was not reviewed; showing it unfiltered.`)
   if (report.llmGated) console.log(`LLM drift pass: locked — Pro license required (\`dross license activate <key>\`)`)
   if (report.truncated) {

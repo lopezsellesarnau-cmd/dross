@@ -96,7 +96,11 @@ async function withFetch<T>(impl: typeof fetch, fn: () => Promise<T>): Promise<T
 
 test('judgeContractDrift reports an API error as failed, with the reason', async () => {
   const out = await withFetch(
-    async () => new Response(JSON.stringify({ error: { message: 'model not found' } }), { status: 404 }),
+    async () =>
+      new Response(JSON.stringify({ type: 'error', error: { type: 'not_found_error', message: 'model not found' } }), {
+        status: 404,
+        headers: { 'content-type': 'application/json' },
+      }),
     () => judgeContractDrift(surface, [candidate()]),
   )
   assert.equal(out.status, 'failed')
@@ -118,10 +122,16 @@ test('judgeContractDrift reports a network error as failed, never as ran', async
 test('judgeContractDrift is ok only when the model answers', async () => {
   const c = candidate()
   const body = {
-    content: [{ type: 'tool_use', name: 'report_drift', input: { suppress: [{ file: c.file, line: c.line }], items: [] } }],
+    id: 'msg_1',
+    type: 'message',
+    role: 'assistant',
+    model: 'claude-opus-5',
+    stop_reason: 'end_turn',
+    content: [{ type: 'text', text: JSON.stringify({ suppress: [{ file: c.file, line: c.line, reason: 'noise' }], items: [] }) }],
+    usage: { input_tokens: 1, output_tokens: 1 },
   }
   const out = await withFetch(
-    async () => new Response(JSON.stringify(body), { status: 200 }),
+    async () => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } }),
     () => judgeContractDrift(surface, [c]),
   )
   assert.equal(out.status, 'ok')
@@ -136,4 +146,17 @@ test('judgeContractDrift skips (does not fail) with no key', async () => {
   } finally {
     if (realKey !== undefined) process.env.ANTHROPIC_API_KEY = realKey
   }
+})
+
+test('judgeContractDrift reports a model refusal as failed, not as ran', async () => {
+  const body = {
+    id: 'msg_2', type: 'message', role: 'assistant', model: 'claude-opus-5', stop_reason: 'refusal',
+    content: [], usage: { input_tokens: 1, output_tokens: 0 },
+  }
+  const out = await withFetch(
+    async () => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } }),
+    () => judgeContractDrift(surface, [candidate()]),
+  )
+  assert.equal(out.status, 'failed')
+  assert.match(out.error ?? '', /declined/)
 })

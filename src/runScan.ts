@@ -10,6 +10,7 @@ import { checkInjection } from './checks/injection.js'
 import { checkAuthDrift } from './checks/authDrift.js'
 import { checkDangerousConfig } from './checks/dangerousConfig.js'
 import { judgeContractDrift } from './llm/driftJudge.js'
+import { resolveLlmProvider } from './llm/providers.js'
 import { scoreConfidence } from './confidence.js'
 import { licenseStatus } from './license.js'
 import type { Report } from './report.js'
@@ -51,14 +52,16 @@ export async function runScan(roots: string[]): Promise<Report> {
   }
 
   // The LLM drift pass is the paid tier. It runs only when the user both
-  // brings an Anthropic key AND holds a valid Pro license. Deterministic
+  // brings a key for a supported provider AND holds a valid Pro license. Deterministic
   // checks above always run, free — the free/paid line per the product plan.
   // LLM is a suppressor: it may drop low-confidence drift noise and add
   // extras only for paths already on the extracted surface.
   let llmUsed = false
   let llmGated = false
   let llmError: string | undefined
-  if (process.env.ANTHROPIC_API_KEY) {
+  const llm = resolveLlmProvider()
+  const llmProvider = llm ? `${llm.id} · ${llm.model}` : undefined
+  if (llm) {
     if (licenseStatus().valid) {
       const surface = summarizeDriftSurfaces(files)
       const candidates = findings.filter(
@@ -95,5 +98,6 @@ export async function runScan(roots: string[]): Promise<Report> {
     llmUsed,
     llmGated,
     llmError,
+    llmProvider: llmUsed || llmError ? llmProvider : undefined,
   }
 }

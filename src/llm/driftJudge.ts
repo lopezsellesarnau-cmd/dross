@@ -1,21 +1,23 @@
 import type { Finding } from '../report.js'
 import type { DriftRoute, DriftSurface } from '../checks/contractDrift.js'
+import { callProvider, resolveLlmProvider } from './providers.js'
 
 /**
- * Optional LLM pass for contract drift. Runs only when ANTHROPIC_API_KEY is
- * set AND a Pro license is valid (gated in runScan).
+ * Optional LLM pass for contract drift. Runs only when the user brought a
+ * key for one of the supported providers (see providers.ts) AND a Pro
+ * license is valid (gated in runScan).
  *
  * Role: *suppressor*, not generator. It reviews low-confidence deterministic
  * candidates (dead-endpoint warnings) and may add extras only for paths that
  * already appear on the extracted surface — never invented URLs.
  *
- * Output is forced through a tool schema so we don't slice `{`…`}` out of
- * free text. A balanced-JSON fallback still exists for older API responses.
+ * Output is JSON against `judgeSchema()` (structured outputs on Anthropic,
+ * JSON mode elsewhere) and re-validated here either way — the balanced-JSON
+ * parser tolerates fences or stray prose from providers without schemas.
  */
 
 export type { DriftSurface }
 
-const TOOL_NAME = 'report_drift'
 const MAX_ITEMS = 12
 const MAX_SUPPRESS = 20
 
@@ -46,9 +48,6 @@ export type JudgeOutcome = JudgeResult & {
   status: 'ok' | 'skipped' | 'failed'
   error?: string
 }
-
-/** Hard cap on the API call — the Mac app kills the whole engine at 90s. */
-const LLM_TIMEOUT_MS = 30_000
 
 function formatRoutes(routes: DriftRoute[]): string {
   if (routes.length === 0) return '(none)'
@@ -108,7 +107,7 @@ function asItems(raw: unknown): LlmDriftItem[] {
     const side = i.side === 'client' || i.side === 'server' ? i.side : null
     if (!path || !reason || !side) continue
     const severity = i.severity === 'warning' ? 'warning' : 'finding'
-    const method = typeof i.method === 'string' ? i.method.trim().toUpperCase() : undefined
+    const method = typeof i.method === 'string' && i.method.trim() ? i.method.trim().toUpperCase() : undefined
     out.push({ path, side, reason, severity, method })
     if (out.length >= MAX_ITEMS) break
   }
@@ -182,7 +181,8 @@ export function applyJudge(
   return { extra, drop }
 }
 
-function toolInputSchema() {
+/** Strict schema: every object closed and every field required (structured-output rules). */
+function judgeSchema() {
   return {
     type: 'object',
     properties: {
@@ -197,7 +197,8 @@ function toolInputSchema() {
             line: { type: 'number' },
             reason: { type: 'string' },
           },
-          required: ['file', 'line'],
+          required: ['file', 'line', 'reason'],
+          additionalProperties: false,
         },
       },
       items: {
@@ -208,16 +209,18 @@ function toolInputSchema() {
           type: 'object',
           properties: {
             path: { type: 'string' },
-            method: { type: 'string' },
+            method: { type: 'string', description: 'HTTP method, or empty string if unknown' },
             side: { type: 'string', enum: ['client', 'server'] },
             reason: { type: 'string' },
             severity: { type: 'string', enum: ['finding', 'warning'] },
           },
-          required: ['path', 'side', 'reason', 'severity'],
+          required: ['path', 'method', 'side', 'reason', 'severity'],
+          additionalProperties: false,
         },
       },
     },
     required: ['suppress', 'items'],
+    additionalProperties: false,
   }
 }
 
@@ -248,80 +251,20 @@ Rules:
 - Empty items and empty suppress are fine.`
 }
 
-function reportFromToolInput(input: unknown): LlmDriftReport | null {
-  if (!input || typeof input !== 'object') return null
-  const obj = input as Record<string, unknown>
-  return {
-    suppress: asSuppress(obj.suppress),
-    items: asItems(obj.items),
-  }
-}
-
 export async function judgeContractDrift(
   surface: DriftSurface,
   candidates: Finding[] = [],
 ): Promise<JudgeOutcome> {
   const skipped: JudgeOutcome = { extra: [], drop: [], status: 'skipped' }
-  const failed = (error: string): JudgeOutcome => ({ extra: [], drop: [], status: 'failed', error })
-  const key = process.env.ANTHROPIC_API_KEY
-  if (!key) return skipped
+  const provider = resolveLlmProvider()
+  if (!provider) return skipped
   if (surface.server.length === 0 || surface.client.length === 0) return skipped
-
-  const body = {
-    model: 'claude-sonnet-4-20250514',
-    max_tokens: 1024,
-    temperature: 0,
-    tool_choice: { type: 'tool', name: TOOL_NAME },
-    tools: [
-      {
-        name: TOOL_NAME,
-        description: 'Report contract-drift suppressions and extra mismatches.',
-        input_schema: toolInputSchema(),
-      },
-    ],
-    messages: [{ role: 'user', content: promptFor(surface, candidates) }],
-  }
 
   // Optional pass — a failure must not fail the scan, but it must be
   // reported as failed, never as "ran and found nothing".
-  let res: Response
-  try {
-    res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-api-key': key,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(LLM_TIMEOUT_MS),
-    })
-  } catch (err) {
-    const timedOut = err instanceof Error && err.name === 'TimeoutError'
-    return failed(timedOut ? `timed out after ${LLM_TIMEOUT_MS / 1000}s` : 'network error — could not reach the Anthropic API')
-  }
-  if (!res.ok) {
-    let detail = ''
-    try {
-      const data = (await res.json()) as { error?: { message?: string } }
-      detail = data.error?.message ? ` — ${data.error.message.slice(0, 160)}` : ''
-    } catch {
-      // body not JSON — status code alone is enough
-    }
-    return failed(`Anthropic API returned ${res.status}${detail}`)
-  }
-  try {
-    const data = (await res.json()) as {
-      content?: { type: string; text?: string; name?: string; input?: unknown }[]
-    }
-    const blocks = data.content ?? []
-    const tool = blocks.find((c) => c.type === 'tool_use' && c.name === TOOL_NAME)
-    const fromTool = tool ? reportFromToolInput(tool.input) : null
-    const fromText = parseJudgeReport(blocks.find((c) => c.type === 'text')?.text ?? '')
-    const report = fromTool ?? fromText
-    if (!report) return failed('unreadable response from the model')
-    return { ...applyJudge(report, surface, candidates), status: 'ok' }
-  } catch {
-    return failed('unreadable response from the model')
-  }
+  const call = await callProvider(provider, promptFor(surface, candidates), judgeSchema())
+  if (!call.ok) return { extra: [], drop: [], status: 'failed', error: call.error }
+  const report = parseJudgeReport(call.text)
+  if (!report) return { extra: [], drop: [], status: 'failed', error: 'unreadable response from the model' }
+  return { ...applyJudge(report, surface, candidates), status: 'ok' }
 }
