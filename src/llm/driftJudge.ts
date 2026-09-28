@@ -260,7 +260,7 @@ export async function judgeContractDrift(
   if (!provider) return skipped
   if (surface.server.length === 0 || surface.client.length === 0) return skipped
 
-  // Optional pass — a failure must not fail the scan, but it must be
+  // Optional pass: a failure must not fail the scan, but it must be
   // reported as failed, never as "ran and found nothing".
   const call = await callProvider(provider, promptFor(surface, candidates), judgeSchema())
   if (!call.ok) return { extra: [], drop: [], status: 'failed', error: call.error }
