@@ -18,6 +18,9 @@ struct QualityGatePanel: View {
     private var secretsCount: Int {
         report.openFindings.filter { $0.check == "hardcoded-secrets" }.count
     }
+    private var injectionCount: Int {
+        report.openFindings.filter { $0.check == "injection" }.count
+    }
     private var demoCount: Int {
         report.openFindings.filter { $0.check == "hardcoded-demo" }.count
     }
@@ -35,6 +38,7 @@ struct QualityGatePanel: View {
         [
             (!truncated, truncated ? "Scan stopped early — partial" : "Scan covered the tree"),
             (secretsCount == 0, secretsCount == 0 ? "No hardcoded secrets" : "\(secretsCount) secrets exposed"),
+            (injectionCount == 0, injectionCount == 0 ? "No injection flows" : "\(injectionCount) injection flows"),
             (driftCount == 0, driftCount == 0 ? "No contract drift" : "\(driftCount) contract-drift open"),
             (demoCount == 0, demoCount == 0 ? "No hardcoded demo data" : "\(demoCount) demo-data hits"),
             (hardFindings == 0, hardFindings == 0 ? "No blocking findings" : "\(hardFindings) blocking findings"),
