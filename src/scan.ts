@@ -1,5 +1,6 @@
 import { readdirSync, lstatSync, readFileSync } from 'node:fs'
 import { basename, join, relative } from 'node:path'
+import { loadDrossIgnore } from './ignore.js'
 
 const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'])
 
@@ -32,7 +33,12 @@ export type SourceFile = {
   /** Owning scan root — set when scanning multiple packages (client + API). */
   root?: string
 }
-export type CollectResult = { files: SourceFile[]; truncated: boolean }
+export type CollectResult = {
+  files: SourceFile[]
+  truncated: boolean
+  /** Files/folders skipped because `.drossignore` matched them (a folder counts once). */
+  ignored: number
+}
 
 /** Walks a repo root and returns every source file's path + contents.
  *  No .gitignore parsing yet (v1) — SKIP_DIRS covers the common cases;
@@ -41,6 +47,8 @@ export type CollectResult = { files: SourceFile[]; truncated: boolean }
 function collectSourceFiles(repoRoot: string): CollectResult {
   const files: SourceFile[] = []
   let truncated = false
+  let ignored = 0
+  const rules = loadDrossIgnore(repoRoot)
 
   function walk(dir: string) {
     if (truncated) return
@@ -67,6 +75,10 @@ function collectSourceFiles(repoRoot: string): CollectResult {
         continue
       }
       if (stat.isSymbolicLink()) continue
+      if (rules.ignores(relative(repoRoot, abs), stat.isDirectory())) {
+        ignored++
+        continue
+      }
       if (stat.isDirectory()) {
         walk(abs)
         continue
@@ -82,7 +94,7 @@ function collectSourceFiles(repoRoot: string): CollectResult {
   }
 
   walk(repoRoot)
-  return { files, truncated }
+  return { files, truncated, ignored }
 }
 
 /**
@@ -94,23 +106,26 @@ function collectSourceFiles(repoRoot: string): CollectResult {
  * a basename prefix (`trace-backend/src/…`).
  */
 export function collectSourceFilesMulti(roots: string[]): CollectResult {
-  if (roots.length === 0) return { files: [], truncated: false }
+  if (roots.length === 0) return { files: [], truncated: false, ignored: 0 }
   if (roots.length === 1) {
     const one = collectSourceFiles(roots[0])
     return {
       files: one.files.map((f) => ({ ...f, root: roots[0] })),
       truncated: one.truncated,
+      ignored: one.ignored,
     }
   }
 
   const files: SourceFile[] = []
   let truncated = false
+  let ignored = 0
   const usedLabels = new Map<string, number>()
 
   for (let i = 0; i < roots.length; i++) {
     const root = roots[i]
     const part = collectSourceFiles(root)
     if (part.truncated) truncated = true
+    ignored += part.ignored
 
     let prefix = ''
     if (i > 0) {
@@ -128,11 +143,11 @@ export function collectSourceFilesMulti(roots: string[]): CollectResult {
       })
       if (files.length >= MAX_FILES) {
         truncated = true
-        return { files, truncated }
+        return { files, truncated, ignored }
       }
     }
   }
-  return { files, truncated }
+  return { files, truncated, ignored }
 }
 
 function readFileSafe(path: string): string {

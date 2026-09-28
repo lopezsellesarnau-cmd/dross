@@ -3,6 +3,7 @@ import { lstatSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import type { SourceFile } from '../scan.js'
 import type { Finding } from '../report.js'
+import { loadDrossIgnore, type IgnoreRules } from '../ignore.js'
 
 /**
  * Hardcoded secrets — the most expensive thing that can reach production:
@@ -242,9 +243,10 @@ function publicEnvFinding(file: string, line: number, name: string, why: string)
   }
 }
 
-function checkPublicEnv(root: string, prefix: string, files: SourceFile[]): Finding[] {
+function checkPublicEnv(root: string, prefix: string, files: SourceFile[], rules: IgnoreRules): Finding[] {
   const findings: Finding[] = []
   for (const rel of findEnvFiles(root)) {
+    if (rules.ignores(rel)) continue
     const lines = readSafe(join(root, rel)).split('\n')
     lines.forEach((raw, i) => {
       const m = raw.trim().match(/^(?:export\s+)?([A-Z][A-Z0-9_]*)\s*=\s*(.*)$/)
@@ -279,12 +281,15 @@ function checkPublicEnv(root: string, prefix: string, files: SourceFile[]): Find
  * are the JS/TS sources the scan already collected for this root.
  */
 export function checkRepoSecrets(root: string, prefix = '', files: SourceFile[] = []): Finding[] {
-  const findings = checkPublicEnv(root, prefix, files)
+  // Same .drossignore as the source walk (`files` is already filtered by it).
+  const rules = loadDrossIgnore(root)
+  const findings = checkPublicEnv(root, prefix, files, rules)
   const git = gitFiles(root)
   if (!git) return [...findings, ...checkSecrets(files)]
 
   const tracked = new Set(git.tracked)
   for (const rel of [...git.tracked, ...git.untracked]) {
+    if (rules.ignores(rel)) continue
     const file = prefix ? join(prefix, rel) : rel
     const kind = secretFileKind(root, rel)
     if (kind) {

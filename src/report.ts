@@ -25,6 +25,10 @@ export type Report = {
    *  partial view, not a complete one, and must say so rather than look
    *  identical to a clean small repo. */
   truncated: boolean
+  /** Paths `.drossignore` made the scan skip, and its patterns — always
+   *  reported, so an ignore file can never make a repo look cleaner silently. */
+  ignored?: number
+  ignorePatterns?: string[]
   /** True only when the optional LLM drift pass ran and the model answered. */
   llmUsed?: boolean
   /** True when an LLM provider key was present but the LLM pass was withheld

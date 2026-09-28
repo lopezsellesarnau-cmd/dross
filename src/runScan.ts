@@ -1,5 +1,6 @@
 import { basename } from 'node:path'
 import { collectSourceFilesMulti } from './scan.js'
+import { loadDrossIgnore } from './ignore.js'
 import { checkDeadExports } from './checks/deadExports.js'
 import { checkContractDrift, summarizeDriftSurfaces } from './checks/contractDrift.js'
 import { checkTodoDensity } from './checks/todoDensity.js'
@@ -21,7 +22,7 @@ import type { Report } from './report.js'
  * the only place that composes the checks.
  */
 export async function runScan(roots: string[]): Promise<Report> {
-  const { files, truncated } = collectSourceFilesMulti(roots)
+  const { files, truncated, ignored } = collectSourceFilesMulti(roots)
 
   const findings = [
     ...checkDeadExports(files),
@@ -95,6 +96,8 @@ export async function runScan(roots: string[]): Promise<Report> {
     findings,
     generatedAt: Date.now(),
     truncated,
+    ignored,
+    ignorePatterns: [...new Set(roots.flatMap((r) => loadDrossIgnore(r).patterns))],
     llmUsed,
     llmGated,
     llmError,
