@@ -16,6 +16,7 @@ struct ShipAssistRail: View {
     private static let checkOrder = [
         "hardcoded-secrets",
         "injection",
+        "auth-drift",
         "contract-drift",
         "env-drift",
         "dead-exports",
@@ -26,6 +27,7 @@ struct ShipAssistRail: View {
     private static let checkBlurb: [String: String] = [
         "hardcoded-secrets": "Live API keys, private keys, or a committed .env — leaked on push.",
         "injection": "Request input reaching a shell, eval, SQL string, or file path.",
+        "auth-drift": "A write or /admin route without the auth the rest of the app uses.",
         "contract-drift": "Routes, HTTP methods, and auth headers — app ↔ API agreement.",
         "env-drift": "process.env used in code but missing from .env.example — deploy bombs.",
         "dead-exports": "Unused exports — strip keyword or delete the dead block.",
