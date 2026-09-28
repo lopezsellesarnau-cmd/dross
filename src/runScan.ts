@@ -60,7 +60,7 @@ export async function runScan(roots: string[]): Promise<Report> {
   let llmGated = false
   let llmError: string | undefined
   const llm = resolveLlmProvider()
-  const llmProvider = llm ? `${llm.id} · ${llm.model}` : undefined
+  const llmProvider = llm ? `${llm.label ?? llm.id} · ${llm.model}` : undefined
   if (llm) {
     if (licenseStatus().valid) {
       const surface = summarizeDriftSurfaces(files)

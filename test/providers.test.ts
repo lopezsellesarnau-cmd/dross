@@ -88,3 +88,53 @@ describe('wrongProviderHint', () => {
     assert.equal(wrongProviderHint({ id: 'anthropic', key: 'someMistralKey123', model: 'm' }), '')
   })
 })
+
+describe('custom OpenAI-compatible provider', () => {
+  const base = { DROSS_LLM_PROVIDER: 'custom', DROSS_LLM_MODEL: 'llama3.1' }
+
+  it('is only used when chosen explicitly, and needs a URL', () => {
+    assert.equal(resolveLlmProvider({ DROSS_LLM_BASE_URL: 'https://openrouter.ai/api/v1', DROSS_LLM_API_KEY: 'k' }), null)
+    assert.equal(resolveLlmProvider({ DROSS_LLM_PROVIDER: 'custom' }), null)
+  })
+
+  it('accepts https anywhere and http only for localhost, with an optional key', () => {
+    const local = resolveLlmProvider({ ...base, DROSS_LLM_BASE_URL: 'http://localhost:11434/v1/' })
+    assert.deepEqual(local, { id: 'custom', key: '', model: 'llama3.1', baseUrl: 'http://localhost:11434/v1', label: 'Custom (localhost:11434)' })
+    const remote = resolveLlmProvider({ ...base, DROSS_LLM_BASE_URL: 'https://openrouter.ai/api/v1/chat/completions', DROSS_LLM_API_KEY: 'sk-or-1' })
+    assert.equal(remote?.baseUrl, 'https://openrouter.ai/api/v1')
+    assert.equal(remote?.configError, undefined)
+  })
+
+  it('refuses plain http to another machine, a bad URL, or a missing model — as a reported failure', async () => {
+    const insecure = resolveLlmProvider({ ...base, DROSS_LLM_BASE_URL: 'http://192.168.1.20:8000/v1' })!
+    assert.match(insecure.configError ?? '', /must use https/)
+    assert.deepEqual(await callProvider(insecure, 'p', {}), { ok: false, error: insecure.configError })
+    assert.match(resolveLlmProvider({ ...base, DROSS_LLM_BASE_URL: 'not a url' })!.configError ?? '', /not a valid URL/)
+    assert.match(
+      resolveLlmProvider({ DROSS_LLM_PROVIDER: 'custom', DROSS_LLM_BASE_URL: 'https://api.groq.com/openai/v1' })!.configError ?? '',
+      /needs a model/,
+    )
+  })
+
+  it('sends no Authorization header without a key, and retries without JSON mode if the server rejects it', async () => {
+    const calls: { auth: string | null; body: Record<string, unknown> }[] = []
+    const real = globalThis.fetch
+    globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body))
+      calls.push({ auth: new Headers(init?.headers).get('authorization'), body })
+      if (body.response_format) return new Response(JSON.stringify({ error: 'response_format not supported' }), { status: 400 })
+      return new Response(JSON.stringify({ choices: [{ message: { content: '{"suppress":[],"items":[]}' } }] }), { status: 200 })
+    }) as typeof fetch
+    try {
+      const p = resolveLlmProvider({ ...base, DROSS_LLM_BASE_URL: 'http://127.0.0.1:1234/v1' })!
+      const out = await callProvider(p, 'prompt', {})
+      assert.deepEqual(out, { ok: true, text: '{"suppress":[],"items":[]}' })
+      assert.equal(calls.length, 2)
+      assert.equal(calls[0].auth, null)
+      assert.deepEqual(calls[0].body.response_format, { type: 'json_object' })
+      assert.equal(calls[1].body.response_format, undefined)
+    } finally {
+      globalThis.fetch = real
+    }
+  })
+})

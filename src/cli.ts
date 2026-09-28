@@ -45,7 +45,10 @@ Usage:
 The LLM semantic-drift pass (Pro) needs BOTH a valid license and your own
 key for one provider: ANTHROPIC_API_KEY, OPENAI_API_KEY, DEEPSEEK_API_KEY or
 MISTRAL_API_KEY. Pick one explicitly with DROSS_LLM_PROVIDER, override its
-model with DROSS_LLM_MODEL. Deterministic checks are always free.
+model with DROSS_LLM_MODEL. Any OpenAI-compatible server (OpenRouter, Groq,
+local Ollama…): DROSS_LLM_PROVIDER=custom DROSS_LLM_BASE_URL=<url>
+DROSS_LLM_MODEL=<model> [DROSS_LLM_API_KEY=<key>]. Deterministic checks are
+always free.
 
 CI examples:
   npx dross scan . --json
