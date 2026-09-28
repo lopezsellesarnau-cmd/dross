@@ -96,14 +96,14 @@ enum VerifiedFixer {
         let original = lines[idx]
         if let next = stripExportKeyword(original), next != original {
             lines[idx] = next
-            writeLines(lines, to: abs, trailingNewline: hadTrailing)
+            if let failed = writeLines(lines, to: abs, rel: rel, trailingNewline: hadTrailing) { return failed }
             return Result(ok: true, file: rel, message: "Removed export keyword at line \(line)")
         }
 
         // export { … } — comment out (safe, reversible)
         if let commented = commentExportList(original), commented != original {
             lines[idx] = commented
-            writeLines(lines, to: abs, trailingNewline: hadTrailing)
+            if let failed = writeLines(lines, to: abs, rel: rel, trailingNewline: hadTrailing) { return failed }
             return Result(ok: true, file: rel, message: "Commented export list at line \(line)")
         }
 
@@ -245,7 +245,7 @@ enum VerifiedFixer {
         else if to + 1 < lines.count && lines[to + 1].trimmingCharacters(in: .whitespaces).isEmpty { to += 1 }
 
         lines.removeSubrange(from...to)
-        writeLines(lines, to: abs, trailingNewline: hadTrailing)
+        if let failed = writeLines(lines, to: abs, rel: rel, trailingNewline: hadTrailing) { return failed }
         return Result(
             ok: true,
             file: rel,
@@ -306,10 +306,18 @@ enum VerifiedFixer {
         )
     }
 
-    private static func writeLines(_ lines: [String], to abs: String, trailingNewline: Bool) {
+    /// Writes the rewritten file. Returns a failed Result when the write
+    /// didn't happen (permissions, disk full, file gone) — callers must not
+    /// report a fix that never reached the disk.
+    private static func writeLines(_ lines: [String], to abs: String, rel: String, trailingNewline: Bool) -> Result? {
         var out = lines.joined(separator: "\n")
         if trailingNewline { out += "\n" }
         FixLedger.willWrite(abs)
-        try? out.write(toFile: abs, atomically: true, encoding: .utf8)
+        do {
+            try out.write(toFile: abs, atomically: true, encoding: .utf8)
+            return nil
+        } catch {
+            return Result(ok: false, file: rel, message: "Could not write \(rel): \(error.localizedDescription)")
+        }
     }
 }

@@ -347,13 +347,26 @@ struct CodeFixPopup: View {
                 }
                 let after = Engine.verify(repoPath: root, forRevertCheck: true)
                 if Engine.shouldRevertFix(before: before, after: after, file: file) {
+                    // Only claim "reverted" when the original is actually back
+                    // on disk — otherwise the file is broken and the user must know.
+                    var revertError: String?
                     if let original {
-                        try? original.write(toFile: path, atomically: true, encoding: .utf8)
+                        do {
+                            try original.write(toFile: path, atomically: true, encoding: .utf8)
+                        } catch {
+                            revertError = error.localizedDescription
+                        }
+                    } else {
+                        revertError = "the original couldn't be read before the fix"
                     }
                     DispatchQueue.main.async {
                         self.applying = false
                         self.savedAck = false
-                        self.status = "Auto-correct failed — reverted.\nThis rewrite broke typecheck for \(file).\n\(after.message)"
+                        if let revertError {
+                            self.status = "Auto-correct broke typecheck for \(file) and could NOT be reverted (\(revertError)).\nUndo it with git: git checkout -- \(file)\n\(after.message)"
+                        } else {
+                            self.status = "Auto-correct failed — reverted.\nThis rewrite broke typecheck for \(file).\n\(after.message)"
+                        }
                         self.loadSlice()
                     }
                     return
