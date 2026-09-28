@@ -1,0 +1,6 @@
+{
+  "description": "Every write route uses requireAuth except DELETE /projects/:id (line 16) → auth-drift. Login, the Stripe webhook, the invite capability link and GET routes are negative controls and must NOT be flagged.",
+  "expected": [
+    { "check": "auth-drift", "file": "server.js", "line": 16, "note": "mutating route missing auth" }
+  ]
+}

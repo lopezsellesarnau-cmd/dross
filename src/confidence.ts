@@ -17,6 +17,8 @@ export function scoreConfidence(f: Finding): Confidence {
   if (f.check === 'hardcoded-secrets' && f.severity === 'finding') return 'high'
   if (f.check === 'hardcoded-secrets') return 'medium'
   if (f.check === 'injection') return 'high'
+  // An open /admin route is almost never intended; other mutating routes sometimes are.
+  if (f.check === 'auth-drift') return /"[^"]*\/admin(?:\/|")/i.test(f.message) ? 'high' : 'medium'
   if (f.check === 'todo-density') return 'medium'
   return 'medium'
 }
