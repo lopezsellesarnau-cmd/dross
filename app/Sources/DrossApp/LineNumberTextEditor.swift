@@ -45,6 +45,8 @@ struct LineNumberTextEditor: NSViewRepresentable {
         textView.isAutomaticTextReplacementEnabled = false
         textView.font = .monospacedSystemFont(ofSize: fontSize, weight: .regular)
         textView.textColor = textColor
+        // Explicit, not the system default — keeps the caret visible on the light editor.
+        textView.insertionPointColor = textColor
         textView.drawsBackground = true
         textView.backgroundColor = backgroundColor
         textView.delegate = context.coordinator
