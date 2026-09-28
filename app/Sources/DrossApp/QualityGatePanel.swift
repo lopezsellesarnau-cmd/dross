@@ -24,6 +24,9 @@ struct QualityGatePanel: View {
     private var authDriftCount: Int {
         report.openFindings.filter { $0.check == "auth-drift" }.count
     }
+    private var configCount: Int {
+        report.openFindings.filter { $0.check == "dangerous-config" && $0.severity == .finding }.count
+    }
     private var demoCount: Int {
         report.openFindings.filter { $0.check == "hardcoded-demo" }.count
     }
@@ -43,6 +46,7 @@ struct QualityGatePanel: View {
             (secretsCount == 0, secretsCount == 0 ? "No hardcoded secrets" : "\(secretsCount) secrets exposed"),
             (injectionCount == 0, injectionCount == 0 ? "No injection flows" : "\(injectionCount) injection flows"),
             (authDriftCount == 0, authDriftCount == 0 ? "No unprotected routes" : "\(authDriftCount) unprotected routes"),
+            (configCount == 0, configCount == 0 ? "No dangerous config" : "\(configCount) dangerous settings"),
             (driftCount == 0, driftCount == 0 ? "No contract drift" : "\(driftCount) contract-drift open"),
             (demoCount == 0, demoCount == 0 ? "No hardcoded demo data" : "\(demoCount) demo-data hits"),
             (hardFindings == 0, hardFindings == 0 ? "No blocking findings" : "\(hardFindings) blocking findings"),
