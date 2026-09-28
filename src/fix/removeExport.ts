@@ -1,6 +1,7 @@
-import { readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { nearbyDeclarationIndex } from './nearbyDeclaration.js'
+import { writeFix } from './writeFix.js'
 
 export type FixResult = {
   ok: boolean
@@ -47,7 +48,8 @@ export function fixRemoveExport(repoRoot: string, relPath: string, line: number)
     if (listStrip !== original) {
       lines[idx] = listStrip
       const after = lines.join('\n')
-      writeFileSync(abs, after, 'utf8')
+      const failed = writeFix(abs, after, relPath)
+      if (failed) return failed
       return {
         ok: true,
         file: relPath,
@@ -61,7 +63,8 @@ export function fixRemoveExport(repoRoot: string, relPath: string, line: number)
 
   lines[idx] = next
   const after = lines.join('\n')
-  writeFileSync(abs, after, 'utf8')
+  const failed = writeFix(abs, after, relPath)
+  if (failed) return failed
   return {
     ok: true,
     file: relPath,

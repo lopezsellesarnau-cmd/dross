@@ -1,6 +1,7 @@
-import { readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { nearbyDeclarationIndex } from './nearbyDeclaration.js'
+import { writeFix } from './writeFix.js'
 
 export type FixResult = {
   ok: boolean
@@ -98,7 +99,8 @@ export function fixDeleteDead(repoRoot: string, relPath: string, line: number): 
   else if (to + 1 < lines.length && lines[to + 1].trim() === '') to++
 
   const removed = lines.splice(from, to - from + 1)
-  writeFileSync(abs, lines.join('\n'), 'utf8')
+  const failed = writeFix(abs, lines.join('\n'), relPath)
+  if (failed) return failed
   return {
     ok: true,
     file: relPath,

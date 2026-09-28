@@ -1,6 +1,7 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import type { FixResult } from './removeExport.js'
+import { writeFix } from './writeFix.js'
 
 const ENV_ACCESS =
   /(?:process\.env|import\.meta\.env|Deno\.env\.get)\s*(?:\.([A-Z][A-Z0-9_]*)|\(\s*['"`]([A-Z][A-Z0-9_]*)['"`]\s*\))/
@@ -38,7 +39,8 @@ export function fixAddEnvExample(repoRoot: string, relPath: string, line: number
   }
   const prefix = existing && !existing.endsWith('\n') ? '\n' : existing ? '' : ''
   const next = `${existing}${prefix}${name}=\n`
-  writeFileSync(examplePath, next, 'utf8')
+  const failed = writeFix(examplePath, next, '.env.example')
+  if (failed) return failed
   return {
     ok: true,
     file: '.env.example',
