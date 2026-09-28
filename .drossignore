@@ -1,0 +1,3 @@
+# Paths Dross should not scan (same idea as .gitignore — see src/ignore.ts).
+# The golden-corpus fixtures are deliberately broken sample repos.
+eval/corpus/

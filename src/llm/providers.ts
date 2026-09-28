@@ -23,7 +23,7 @@ type ProviderSpec = {
   baseUrl?: string
 }
 
-export const PROVIDERS: Record<ProviderId, ProviderSpec> = {
+const PROVIDERS: Record<ProviderId, ProviderSpec> = {
   anthropic: { label: 'Anthropic', keyEnv: 'ANTHROPIC_API_KEY', defaultModel: 'claude-opus-5' },
   openai: { label: 'OpenAI', keyEnv: 'OPENAI_API_KEY', defaultModel: 'gpt-6-luna', baseUrl: 'https://api.openai.com/v1' },
   deepseek: { label: 'DeepSeek', keyEnv: 'DEEPSEEK_API_KEY', defaultModel: 'deepseek-flash', baseUrl: 'https://api.deepseek.com' },
@@ -115,7 +115,7 @@ export function wrongProviderHint(p: ResolvedProvider): string {
 }
 
 /** Hard cap per call — the Mac app kills the whole engine at 90s. */
-export const LLM_TIMEOUT_MS = 60_000
+const LLM_TIMEOUT_MS = 60_000
 
 export type JudgeCall = { ok: true; text: string } | { ok: false; error: string }
 
