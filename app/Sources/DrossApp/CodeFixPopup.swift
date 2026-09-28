@@ -394,6 +394,7 @@ struct CodeFixPopup: View {
         }
         allLines.replaceSubrange(startIdx..<endIdx, with: newLines)
         do {
+            FixLedger.willWrite(filePath)
             try allLines.joined(separator: "\n").write(toFile: filePath, atomically: true, encoding: .utf8)
             rangeEnd = rangeStart + newLines.count - 1
             pristine = draft
@@ -507,7 +508,7 @@ struct FixSessionDonePopup: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(verifying || committing)
-                .help("git add -u && commit — tracked files only, no untracked secrets")
+                .help("Commits only the files Dross changed this session — never your other work in progress")
             }
             .padding(18)
             .frame(width: w, height: h, alignment: .top)
