@@ -332,7 +332,7 @@ struct CodeFixPopup: View {
         let path = filePath
         let original = try? String(contentsOfFile: path, encoding: .utf8)
         DispatchQueue.global(qos: .userInitiated).async {
-            let before = Engine.verify(repoPath: root)
+            let before = Engine.verify(repoPath: root, forRevertCheck: true)
             do {
                 let result = try Engine.applyVerifiedFix(
                     repoPath: root, file: file, line: line, kind: kind
@@ -345,7 +345,7 @@ struct CodeFixPopup: View {
                     }
                     return
                 }
-                let after = Engine.verify(repoPath: root)
+                let after = Engine.verify(repoPath: root, forRevertCheck: true)
                 if Engine.shouldRevertFix(before: before, after: after, file: file) {
                     if let original {
                         try? original.write(toFile: path, atomically: true, encoding: .utf8)
@@ -412,7 +412,10 @@ struct FixSessionDonePopup: View {
     var verifying: Bool
     var commitMessage: String?
     var committing: Bool
+    /// Verify skipped the repo's own tsc/tests — offer to trust the repo.
+    var needsTrust: Bool = false
     var onVerify: () -> Void
+    var onTrust: () -> Void = {}
     var onCommit: () -> Void
     var onClose: () -> Void
 
@@ -421,11 +424,14 @@ struct FixSessionDonePopup: View {
     var body: some View {
         GeometryReader { geo in
             let w: CGFloat = 400
-            let h: CGFloat = 300
+            // Fixed box; long verify output scrolls inside it so the
+            // buttons below can never be pushed out of the panel.
+            let h: CGFloat = needsTrust ? 420 : 360
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
                     Text("Queue clear")
                         .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(Theme.ink) // explicit — system dark mode would paint it white
                     Spacer()
                     Button(action: onClose) {
                         Image(systemName: "xmark")
@@ -439,20 +445,46 @@ struct FixSessionDonePopup: View {
                     .foregroundStyle(Theme.inkAlpha(0.55))
                     .fixedSize(horizontal: false, vertical: true)
 
-                if let verifyMessage {
-                    Text(verifyMessage)
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(Theme.inkAlpha(0.7))
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                if let commitMessage {
-                    Text(commitMessage)
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(Theme.inkAlpha(0.7))
-                        .fixedSize(horizontal: false, vertical: true)
+                if verifyMessage != nil || commitMessage != nil {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 10) {
+                            if let verifyMessage {
+                                Text(verifyMessage)
+                                    .font(.system(size: 11, design: .monospaced))
+                                    .foregroundStyle(Theme.inkAlpha(0.7))
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .textSelection(.enabled)
+                            }
+                            if let commitMessage {
+                                Text(commitMessage)
+                                    .font(.system(size: 11, design: .monospaced))
+                                    .foregroundStyle(Theme.inkAlpha(0.7))
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .frame(maxHeight: .infinity)
                 }
 
                 Spacer(minLength: 0)
+
+                if needsTrust {
+                    // Explicit, per-repo opt-in: the repo's tsc and test
+                    // script are its own code, so they only run once the
+                    // user says this repo is theirs / trusted.
+                    Button(action: onTrust) {
+                        Text("Trust this repo & re-verify")
+                            .font(.system(size: 12, weight: .semibold, design: .default))
+                            .foregroundStyle(Theme.rust)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .overlay(Rectangle().stroke(Theme.rust, lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(verifying || committing)
+                    .help("Lets Dross run this repo's own compiler and test script. Only for repos you'd run yourself.")
+                }
 
                 Button(action: onVerify) {
                     Text(verifying ? "Verifying…" : "Re-scan & verify")

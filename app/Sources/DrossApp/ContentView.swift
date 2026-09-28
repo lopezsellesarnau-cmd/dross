@@ -27,6 +27,8 @@ struct ContentView: View {
     @State private var fixSessionAdvancing = false
     @State private var verifying = false
     @State private var verifyMessage: String?
+    /// Last verify skipped the repo's tsc/tests because the repo isn't trusted.
+    @State private var verifyNeedsTrust = false
     @State private var committing = false
     @State private var commitMessage: String?
     @State private var showLowConfidence = false
@@ -60,11 +62,17 @@ struct ContentView: View {
                         verifying: verifying,
                         commitMessage: commitMessage,
                         committing: committing,
+                        needsTrust: verifyNeedsTrust,
                         onVerify: verifyAfterFixes,
+                        onTrust: {
+                            Engine.trust(repoPath: repoPath)
+                            verifyAfterFixes()
+                        },
                         onCommit: commitFixes,
                         onClose: {
                             fixSessionDone = false
                             verifyMessage = nil
+                            verifyNeedsTrust = false
                             commitMessage = nil
                         }
                     )
@@ -588,6 +596,7 @@ struct ContentView: View {
     private func verifyAfterFixes() {
         verifying = true
         verifyMessage = nil
+        verifyNeedsTrust = false
         DispatchQueue.global(qos: .userInitiated).async {
             do {
                 let result = try Engine.scan(repoPath: self.repoPath)
@@ -611,6 +620,7 @@ struct ContentView: View {
                         ? tests.message
                         : "Tests failed (repo's own test suite — not a Dross crash):\n\(tests.message)"
                     self.verifyMessage = scanLine + "\n" + compileLine + "\n" + testLine
+                    self.verifyNeedsTrust = compile.needsTrust || tests.needsTrust
                 }
             } catch {
                 DispatchQueue.main.async {
