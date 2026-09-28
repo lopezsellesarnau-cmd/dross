@@ -8,6 +8,7 @@ import { checkEnvDrift } from './checks/envDrift.js'
 import { checkRepoSecrets } from './checks/secrets.js'
 import { checkInjection } from './checks/injection.js'
 import { checkAuthDrift } from './checks/authDrift.js'
+import { checkDangerousConfig } from './checks/dangerousConfig.js'
 import { judgeContractDrift } from './llm/driftJudge.js'
 import { scoreConfidence } from './confidence.js'
 import { licenseStatus } from './license.js'
@@ -28,6 +29,7 @@ export async function runScan(roots: string[]): Promise<Report> {
     ...checkHardcodedDemo(files),
     ...checkInjection(files),
     ...checkAuthDrift(files),
+    ...checkDangerousConfig(files),
   ]
 
   // Env files live per package — check each root against its own files.

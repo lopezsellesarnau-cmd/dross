@@ -1,0 +1,7 @@
+{
+  "description": "CORS reflecting any origin with credentials (line 10) and a JWT secret that falls back to a hardcoded value (line 11) → dangerous-config. The env secret with a startup check, the fixed HS256 algorithm and the config-gated TLS opt-out are negative controls and must NOT be flagged.",
+  "expected": [
+    { "check": "dangerous-config", "file": "server.js", "line": 10, "note": "CORS any origin + credentials" },
+    { "check": "dangerous-config", "file": "server.js", "line": 11, "note": "JWT secret fallback" }
+  ]
+}
