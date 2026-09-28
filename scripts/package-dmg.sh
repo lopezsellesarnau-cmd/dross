@@ -69,10 +69,9 @@ if [[ -f "$APP_DIR/AppIcon.icns" ]]; then
   cp "$APP_DIR/AppIcon.icns" "$DIST/${APP_NAME}.app/Contents/Resources/AppIcon.icns"
 fi
 cp -R "$ROOT/dist/"* "$DIST/${APP_NAME}.app/Contents/Resources/engine/"
-# Engine parses with the TypeScript compiler API — bundle it so the shipped
-# .app can `import 'typescript'` (must be in place before codesign below).
-mkdir -p "$DIST/${APP_NAME}.app/Contents/Resources/engine/node_modules"
-cp -R "$ROOT/node_modules/typescript" "$DIST/${APP_NAME}.app/Contents/Resources/engine/node_modules/"
+# Runtime deps (typescript for the AST, @anthropic-ai/sdk for the LLM pass) —
+# must be in place before codesign below.
+"$ROOT/scripts/copy-engine-deps.sh" "$DIST/${APP_NAME}.app/Contents/Resources/engine"
 printf '%s\n' '{"type":"module"}' > "$DIST/${APP_NAME}.app/Contents/Resources/engine/package.json"
 
 APP="$DIST/${APP_NAME}.app"

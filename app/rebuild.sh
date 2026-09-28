@@ -41,11 +41,8 @@ echo "Bundling engine into .app…"
 rm -rf Dross.app/Contents/Resources/engine
 mkdir -p Dross.app/Contents/Resources/engine
 cp -R "$ROOT/dist/"* Dross.app/Contents/Resources/engine/
-# The engine parses with the TypeScript compiler API (contract-drift AST) —
-# ship the package so `import 'typescript'` resolves inside the .app too.
-mkdir -p Dross.app/Contents/Resources/engine/node_modules
-rm -rf Dross.app/Contents/Resources/engine/node_modules/typescript
-cp -R "$ROOT/node_modules/typescript" Dross.app/Contents/Resources/engine/node_modules/
+# Runtime deps (typescript for the AST, @anthropic-ai/sdk for the LLM pass).
+"$ROOT/scripts/copy-engine-deps.sh" Dross.app/Contents/Resources/engine
 # So Node treats bundled .js as ESM even when the .app isn’t inside the repo.
 printf '%s\n' '{"type":"module"}' > Dross.app/Contents/Resources/engine/package.json
 
