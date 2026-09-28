@@ -8,8 +8,11 @@
 # `typescript`, which contract-drift imports for the AST parser.
 set -e
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-DEST="$1/node_modules"
 [ -n "$1" ] || { echo "usage: $0 <engine-dir>" >&2; exit 2; }
+# Absolute before the `cd "$ROOT"` below — a relative path (rebuild.sh passes
+# one) would otherwise resolve against the repo root and copy to the wrong place.
+mkdir -p "$1"
+DEST="$(cd "$1" && pwd)/node_modules"
 
 rm -rf "$DEST"
 mkdir -p "$DEST"
