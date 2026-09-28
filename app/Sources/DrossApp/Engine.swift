@@ -30,14 +30,24 @@ enum Engine {
         static let none = LicenseStatus(valid: false, plan: nil, email: nil, expiresAt: nil, reason: "Not licensed", source: "none")
     }
 
-    /// UserDefaults key for the user's own Anthropic API key (BYO-key model).
-    /// Forwarded to the engine only for `scan`; the engine still gates the LLM
-    /// pass on a valid license, so a stored key alone unlocks nothing.
+    /// Legacy UserDefaults key where older builds kept the Anthropic API key
+    /// in plain text — only read once, to migrate it into the Keychain.
     static let anthropicKeyDefaultsKey = "dross.anthropicKey"
 
-    private static func storedAnthropicKey() -> String? {
-        let k = UserDefaults.standard.string(forKey: anthropicKeyDefaultsKey)?.trimmingCharacters(in: .whitespacesAndNewlines)
-        return (k?.isEmpty == false) ? k : nil
+    /// UserDefaults key for the chosen LLM provider (not a secret).
+    static let llmProviderDefaultsKey = "dross.llmProvider"
+
+    static var selectedProvider: LLMProvider {
+        UserDefaults.standard.string(forKey: llmProviderDefaultsKey).flatMap(LLMProvider.init(rawValue:)) ?? .anthropic
+    }
+
+    /// Env for the engine's LLM pass: the chosen provider and only its key,
+    /// from the Keychain (BYO-key model). The engine still gates the pass on
+    /// a valid license, so a stored key alone unlocks nothing.
+    private static func llmEnv() -> [String: String] {
+        let provider = selectedProvider
+        guard let key = KeychainStore.apiKey(for: provider) else { return [:] }
+        return ["DROSS_LLM_PROVIDER": provider.rawValue, provider.envVar: key]
     }
 
     /// Hard ceiling so a hung Node process can't leave the UI spinning forever.
@@ -73,12 +83,10 @@ enum Engine {
     }
 
     static func scan(repoPath: String) throws -> ScanReport {
-        // Forward the user's own Anthropic key (if set). The engine runs the
-        // LLM pass only when a valid Pro license is also present — so free
+        // Forward the user's chosen provider + key (if set). The engine runs
+        // the LLM pass only when a valid Pro license is also present — so free
         // users never pay the LLM latency, and unlicensed keys unlock nothing.
-        var extraEnv: [String: String] = [:]
-        if let key = storedAnthropicKey() { extraEnv["ANTHROPIC_API_KEY"] = key }
-        let outData = try runEngine(arguments: [enginePath, repoPath, "--json"], extraEnv: extraEnv)
+        let outData = try runEngine(arguments: [enginePath, repoPath, "--json"], extraEnv: llmEnv())
         do {
             return try JSONDecoder().decode(ScanReport.self, from: outData)
         } catch {
@@ -507,10 +515,10 @@ enum Engine {
         if env["PATH"] == nil || env["PATH"]?.isEmpty == true {
             env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"
         }
-        // Never inherit a shell ANTHROPIC key into GUI scans — an LLM hang
-        // looked like a flaky 90s Re-scan timeout. Callers opt in explicitly
-        // via extraEnv (scan forwards the user's stored key when set).
-        env.removeValue(forKey: "ANTHROPIC_API_KEY")
+        // Never inherit shell LLM keys/settings into GUI scans — an LLM hang
+        // looked like a flaky 90s Re-scan timeout, and only the provider the
+        // user chose in Dross should be used. Callers opt in via extraEnv.
+        for name in LLMProvider.allEngineEnvVars { env.removeValue(forKey: name) }
         for (k, v) in extraEnv { env[k] = v }
         process.environment = env
 

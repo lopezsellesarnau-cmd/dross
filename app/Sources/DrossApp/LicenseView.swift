@@ -2,12 +2,16 @@ import SwiftUI
 
 /// License / Pro settings sheet. Datasheet chrome to match the rest of the app.
 /// Enter a license key to unlock the LLM semantic-drift pass, plus your own
-/// Anthropic API key (bring-your-own-key — nothing is resold or proxied).
+/// API key for the provider you choose (bring-your-own-key — nothing is
+/// resold or proxied). Keys live in the Keychain, one per provider.
 struct LicenseView: View {
     @ObservedObject var license: LicenseStore
     var onClose: () -> Void
 
     @State private var keyField = ""
+    /// Local copy of the provider key field; pushed to the store only on user edits.
+    @State private var apiKeyDraft = ""
+    @FocusState private var apiKeyFocused: Bool
     @State private var message: String?
     @State private var messageIsError = false
 
@@ -44,15 +48,31 @@ struct LicenseView: View {
             }
 
             VStack(alignment: .leading, spacing: 8) {
-                fieldLabel("ANTHROPIC API KEY  (BRING-YOUR-OWN)")
-                SecureField("sk-ant-…", text: $license.anthropicKey)
+                fieldLabel("LLM PROVIDER  (BRING-YOUR-OWN KEY)")
+                providerPicker
+                SecureField(license.provider.keyPlaceholder, text: $apiKeyDraft)
                     .textFieldStyle(.plain)
                     .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(Theme.ink)
+                    .focused($apiKeyFocused)
+                    .onAppear { apiKeyDraft = license.apiKey }
+                    // User edit → store (may switch provider). Store reload
+                    // (provider switch) → field. Equal values stop the loop.
+                    .onChange(of: apiKeyDraft) { _, new in
+                        guard new != license.apiKey else { return }
+                        license.userEditedKey(new)
+                        // Ignored echo → show what's actually stored again.
+                        if license.apiKey != new { apiKeyDraft = license.apiKey }
+                    }
+                    .onChange(of: license.apiKey) { _, new in
+                        if apiKeyDraft != new { apiKeyDraft = new }
+                    }
                     .padding(8)
                     .overlay(Rectangle().stroke(Theme.ink, lineWidth: 1))
-                Text("Required for the semantic-drift pass. Stored locally; sent only to Anthropic during a scan.")
+                Text("Required for the semantic-drift pass. Stored in your Keychain; sent only to \(license.provider.label) during a scan.")
                     .font(.system(size: 10, design: .monospaced))
                     .foregroundStyle(Theme.inkAlpha(0.55))
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             if let message {
@@ -72,7 +92,7 @@ struct LicenseView: View {
             }
         }
         .padding(24)
-        .frame(width: 460, height: 440)
+        .frame(width: 480, height: 480)
         .background(Theme.bone)
     }
 
@@ -99,7 +119,7 @@ struct LicenseView: View {
             if license.isPro {
                 Text(license.llmReady
                      ? "PRO ACTIVE — \(license.status.email ?? "licensed")"
-                     : "PRO ACTIVE — add your Anthropic key to run the LLM pass")
+                     : "PRO ACTIVE — add your \(license.provider.label) key to run the LLM pass")
                     .font(.system(size: 11, weight: .medium, design: .monospaced))
                     .foregroundStyle(Theme.ink)
             } else {
@@ -108,6 +128,38 @@ struct LicenseView: View {
                     .foregroundStyle(Theme.ink)
             }
         }
+    }
+
+    /// Datasheet-style provider buttons. Not a system segmented Picker: that
+    /// follows the macOS appearance and drew white labels on this light
+    /// sheet in dark mode.
+    private var providerPicker: some View {
+        HStack(spacing: 0) {
+            ForEach(LLMProvider.allCases) { p in
+                let selected = license.provider == p
+                Button {
+                    // Leave the key field first so it can't write its old
+                    // text back into the newly selected provider.
+                    apiKeyFocused = false
+                    license.provider = p
+                } label: {
+                    Text(p.label.uppercased())
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .tracking(0.8)
+                        .foregroundStyle(selected ? Theme.bone : Theme.ink)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                        .background(selected ? Theme.ink : Color.clear)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                if p != LLMProvider.allCases.last {
+                    Rectangle().fill(Theme.ink).frame(width: 1)
+                }
+            }
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .overlay(Rectangle().stroke(Theme.ink, lineWidth: 1))
     }
 
     private func fieldLabel(_ text: String) -> some View {
