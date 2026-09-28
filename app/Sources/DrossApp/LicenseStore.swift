@@ -26,7 +26,9 @@ final class LicenseStore: ObservableObject {
     /// under that provider and the picker follows — a key in the wrong
     /// slot is sent to the wrong API.
     func userEditedKey(_ key: String) {
-        if let detected = LLMProvider.detect(fromKey: key), detected != provider {
+        // Custom gateways accept any key format (even an OpenAI-looking one
+        // for a proxy) — never re-file a key typed there.
+        if provider != .custom, let detected = LLMProvider.detect(fromKey: key), detected != provider {
             // Exactly the key already filed under that provider: an echo of
             // the previous selection (e.g. the field re-sending its text right
             // after a provider switch), not a new paste — ignore it.
@@ -41,11 +43,29 @@ final class LicenseStore: ObservableObject {
 
     var isPro: Bool { status.valid }
     /// LLM pass can actually run only with BOTH a license and a key.
-    var llmReady: Bool { isPro && !apiKey.trimmingCharacters(in: .whitespaces).isEmpty }
+    /// Custom provider: OpenAI-compatible base URL and model name.
+    @Published var customBaseURL: String {
+        didSet { UserDefaults.standard.set(customBaseURL, forKey: Engine.customBaseURLDefaultsKey) }
+    }
+    @Published var customModel: String {
+        didSet { UserDefaults.standard.set(customModel, forKey: Engine.customModelDefaultsKey) }
+    }
+
+    var llmReady: Bool {
+        guard isPro else { return false }
+        if provider == .custom {
+            // Local servers need no key; the URL and model are what's required.
+            return !customBaseURL.trimmingCharacters(in: .whitespaces).isEmpty
+                && !customModel.trimmingCharacters(in: .whitespaces).isEmpty
+        }
+        return !apiKey.trimmingCharacters(in: .whitespaces).isEmpty
+    }
 
     init() {
         KeychainStore.migrateFromUserDefaults(key: Engine.anthropicKeyDefaultsKey)
         Self.refileMisplacedKeys()
+        customBaseURL = UserDefaults.standard.string(forKey: Engine.customBaseURLDefaultsKey) ?? ""
+        customModel = UserDefaults.standard.string(forKey: Engine.customModelDefaultsKey) ?? ""
         let chosen = Engine.selectedProvider
         provider = chosen
         apiKey = KeychainStore.apiKey(for: chosen) ?? ""
@@ -57,7 +77,7 @@ final class LicenseStore: ObservableObject {
     /// when that slot is empty, so a real key is never overwritten. If the
     /// selected provider was left with nothing, follow the key.
     private static func refileMisplacedKeys() {
-        for slot in LLMProvider.allCases {
+        for slot in LLMProvider.allCases where slot != .custom {
             guard let key = KeychainStore.apiKey(for: slot),
                   let owner = LLMProvider.detect(fromKey: key), owner != slot,
                   KeychainStore.apiKey(for: owner) == nil,

@@ -4,6 +4,8 @@ import Foundation
 /// engine's `src/llm/providers.ts` (ids and env var names).
 enum LLMProvider: String, CaseIterable, Identifiable {
     case anthropic, openai, deepseek, mistral
+    /// Any OpenAI-compatible server: OpenRouter, Groq, a local Ollama/LM Studio…
+    case custom
 
     var id: String { rawValue }
 
@@ -13,6 +15,7 @@ enum LLMProvider: String, CaseIterable, Identifiable {
         case .openai: return "OpenAI"
         case .deepseek: return "DeepSeek"
         case .mistral: return "Mistral"
+        case .custom: return "Custom"
         }
     }
 
@@ -23,6 +26,7 @@ enum LLMProvider: String, CaseIterable, Identifiable {
         case .openai: return "OPENAI_API_KEY"
         case .deepseek: return "DEEPSEEK_API_KEY"
         case .mistral: return "MISTRAL_API_KEY"
+        case .custom: return "DROSS_LLM_API_KEY"
         }
     }
 
@@ -32,6 +36,7 @@ enum LLMProvider: String, CaseIterable, Identifiable {
         case .openai: return "sk-proj-…"
         case .deepseek: return "sk-…"
         case .mistral: return "Mistral API key"
+        case .custom: return "API key (not needed for local servers)"
         }
     }
 
@@ -46,9 +51,17 @@ enum LLMProvider: String, CaseIterable, Identifiable {
         return nil
     }
 
+    /// One-click base URLs for the custom provider (all OpenAI-compatible).
+    static let customPresets: [(name: String, url: String)] = [
+        ("OpenRouter", "https://openrouter.ai/api/v1"),
+        ("Groq", "https://api.groq.com/openai/v1"),
+        ("Ollama", "http://localhost:11434/v1"),
+        ("LM Studio", "http://localhost:1234/v1"),
+    ]
+
     /// Env vars the engine reacts to — stripped from anything a GUI launch
     /// inherits, so only what the user chose in Dross is ever forwarded.
     static var allEngineEnvVars: [String] {
-        allCases.map(\.envVar) + ["DROSS_LLM_PROVIDER", "DROSS_LLM_MODEL"]
+        allCases.map(\.envVar) + ["DROSS_LLM_PROVIDER", "DROSS_LLM_MODEL", "DROSS_LLM_BASE_URL"]
     }
 }

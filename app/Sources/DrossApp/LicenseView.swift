@@ -50,6 +50,7 @@ struct LicenseView: View {
             VStack(alignment: .leading, spacing: 8) {
                 fieldLabel("LLM PROVIDER  (BRING-YOUR-OWN KEY)")
                 providerPicker
+                if license.provider == .custom { customServerFields }
                 SecureField(license.provider.keyPlaceholder, text: $apiKeyDraft)
                     .textFieldStyle(.plain)
                     .font(.system(size: 12, design: .monospaced))
@@ -69,7 +70,9 @@ struct LicenseView: View {
                     }
                     .padding(8)
                     .overlay(Rectangle().stroke(Theme.ink, lineWidth: 1))
-                Text("Required for the semantic-drift pass. Stored in your Keychain; sent only to \(license.provider.label) during a scan.")
+                Text(license.provider == .custom
+                     ? "Key stored in your Keychain; sent only to the server above during a scan. https:// required, except for local servers."
+                     : "Required for the semantic-drift pass. Stored in your Keychain; sent only to \(license.provider.label) during a scan.")
                     .font(.system(size: 10, design: .monospaced))
                     .foregroundStyle(Theme.inkAlpha(0.55))
                     .fixedSize(horizontal: false, vertical: true)
@@ -92,7 +95,7 @@ struct LicenseView: View {
             }
         }
         .padding(24)
-        .frame(width: 480, height: 480)
+        .frame(width: 520, height: license.provider == .custom ? 620 : 480)
         .background(Theme.bone)
     }
 
@@ -119,7 +122,9 @@ struct LicenseView: View {
             if license.isPro {
                 Text(license.llmReady
                      ? "PRO ACTIVE — \(license.status.email ?? "licensed")"
-                     : "PRO ACTIVE — add your \(license.provider.label) key to run the LLM pass")
+                     : license.provider == .custom
+                        ? "PRO ACTIVE — add the server URL and model to run the LLM pass"
+                        : "PRO ACTIVE — add your \(license.provider.label) key to run the LLM pass")
                     .font(.system(size: 11, weight: .medium, design: .monospaced))
                     .foregroundStyle(Theme.ink)
             } else {
@@ -160,6 +165,38 @@ struct LicenseView: View {
         }
         .fixedSize(horizontal: false, vertical: true)
         .overlay(Rectangle().stroke(Theme.ink, lineWidth: 1))
+    }
+
+    /// Custom provider: preset servers, then the URL and model fields.
+    private var customServerFields: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                ForEach(LLMProvider.customPresets, id: \.url) { preset in
+                    let selected = license.customBaseURL == preset.url
+                    Button { license.customBaseURL = preset.url } label: {
+                        Text(preset.name)
+                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .foregroundStyle(selected ? Theme.bone : Theme.ink)
+                            .padding(.horizontal, 8).padding(.vertical, 5)
+                            .background(selected ? Theme.ink : Color.clear)
+                            .overlay(Rectangle().stroke(Theme.ink, lineWidth: 1))
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            plainField("https://… /v1  (OpenAI-compatible server)", text: $license.customBaseURL)
+            plainField("Model name, e.g. meta-llama/llama-3.3-70b-instruct or llama3.1", text: $license.customModel)
+        }
+    }
+
+    private func plainField(_ placeholder: String, text: Binding<String>) -> some View {
+        TextField(placeholder, text: text)
+            .textFieldStyle(.plain)
+            .font(.system(size: 12, design: .monospaced))
+            .foregroundStyle(Theme.ink)
+            .padding(8)
+            .overlay(Rectangle().stroke(Theme.ink, lineWidth: 1))
     }
 
     private func fieldLabel(_ text: String) -> some View {

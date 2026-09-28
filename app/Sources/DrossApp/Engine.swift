@@ -36,6 +36,9 @@ enum Engine {
 
     /// UserDefaults key for the chosen LLM provider (not a secret).
     static let llmProviderDefaultsKey = "dross.llmProvider"
+    /// Custom provider settings — not secrets (the key stays in the Keychain).
+    static let customBaseURLDefaultsKey = "dross.customBaseURL"
+    static let customModelDefaultsKey = "dross.customModel"
 
     static var selectedProvider: LLMProvider {
         UserDefaults.standard.string(forKey: llmProviderDefaultsKey).flatMap(LLMProvider.init(rawValue:)) ?? .anthropic
@@ -46,6 +49,16 @@ enum Engine {
     /// a valid license, so a stored key alone unlocks nothing.
     private static func llmEnv() -> [String: String] {
         let provider = selectedProvider
+        if provider == .custom {
+            // Custom: URL + model required, key optional (local servers).
+            let defaults = UserDefaults.standard
+            let url = defaults.string(forKey: customBaseURLDefaultsKey)?.trimmingCharacters(in: .whitespaces) ?? ""
+            let model = defaults.string(forKey: customModelDefaultsKey)?.trimmingCharacters(in: .whitespaces) ?? ""
+            guard !url.isEmpty else { return [:] }
+            var env = ["DROSS_LLM_PROVIDER": "custom", "DROSS_LLM_BASE_URL": url, "DROSS_LLM_MODEL": model]
+            if let key = KeychainStore.apiKey(for: .custom) { env[provider.envVar] = key }
+            return env
+        }
         guard let key = KeychainStore.apiKey(for: provider) else { return [:] }
         return ["DROSS_LLM_PROVIDER": provider.rawValue, provider.envVar: key]
     }
