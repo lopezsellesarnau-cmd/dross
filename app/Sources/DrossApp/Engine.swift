@@ -184,7 +184,10 @@ enum Engine {
 
     /// Post-fix check: `tsc --noEmit` when the repo has TypeScript — proves
     /// the rewrite didn’t break types. Not a guess; compiler is the oracle.
-    static func verify(repoPath: String) -> VerifyResult {
+    /// `forRevertCheck`: Auto-correct compares a before/after run with the
+    /// same compiler, so version-skew noise cancels out — it needs the raw
+    /// result, not the "inconclusive" softening meant for the Verify panel.
+    static func verify(repoPath: String, forRevertCheck: Bool = false) -> VerifyResult {
         let fm = FileManager.default
         let tsconfig = (repoPath as NSString).appendingPathComponent("tsconfig.json")
         guard fm.fileExists(atPath: tsconfig) else {
@@ -205,46 +208,31 @@ enum Engine {
             needsTrust: true
         )
 
-        // Expo/Next tsconfigs `extends` a package (`expo/tsconfig.base`). A
-        // Homebrew `tsc` often reports TS6053 and is a false Auto-correct
-        // failure — those need the repo's tsc.
-        let extendsPackage = tsconfigExtendsNodePackage(at: tsconfig)
-        let tscPath: String?
-        if extendsPackage, hasLocal, trusted {
-            tscPath = localTsc
-        } else {
-            tscPath = globalTsc ?? (hasLocal && trusted ? localTsc : nil)
+        // Trusted: the repo's own tsc is the right oracle — it is the
+        // version the repo pins. A global tsc can disagree for reasons that
+        // aren't the repo's fault: Expo/Next configs that `extend` a package
+        // (TS6053), or a newer major with different defaults (TypeScript 7
+        // no longer auto-loads @types/node → false TS2591 on every
+        // `node:` import).
+        if trusted, hasLocal {
+            return runTsc(localTsc, repoPath: repoPath)
         }
-        guard let tsc = tscPath else {
-            if hasLocal && !trusted { return untrustedSkip }
+        guard let tsc = globalTsc else {
+            if hasLocal { return untrustedSkip }
             return VerifyResult(ok: true, message: "TypeScript compiler not found — skipped typecheck. Re-scan still ran.")
         }
-
-        var result = runTsc(tsc, repoPath: repoPath)
-        if !result.ok, result.message.contains("TS6053"), tsc != localTsc, hasLocal {
-            // Global tsc can't load the package-extended config.
-            guard trusted else { return untrustedSkip }
-            result = runTsc(localTsc, repoPath: repoPath)
+        let result = runTsc(tsc, repoPath: repoPath)
+        // Untrusted + global tsc failed + the repo ships its own compiler:
+        // the failure may be version skew, not the repo. Don't report a
+        // failure we can't stand behind — call it inconclusive.
+        if !result.ok, hasLocal, !forRevertCheck {
+            return VerifyResult(
+                ok: true,
+                message: "Typecheck inconclusive — your global tsc disagrees with this repo's own version. Trust the repo to check with its tsc.",
+                needsTrust: true
+            )
         }
         return result
-    }
-
-    /// True when `extends` is a package name, not `./foo`.
-    private static func tsconfigExtendsNodePackage(at tsconfig: String) -> Bool {
-        guard let text = try? String(contentsOfFile: tsconfig, encoding: .utf8) else { return false }
-        if let data = text.data(using: .utf8),
-           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-           let ext = json["extends"] as? String {
-            return !ext.hasPrefix(".") && !ext.hasPrefix("/")
-        }
-        // tsconfig often has comments — JSONSerialization fails; regex fallback.
-        guard let match = text.range(of: #"\"extends\"\s*:\s*\"([^\"]+)\""#, options: .regularExpression) else {
-            return false
-        }
-        let raw = String(text[match])
-        guard let inner = raw.split(separator: "\"").dropFirst(2).first else { return false }
-        let ext = String(inner)
-        return !ext.hasPrefix(".") && !ext.hasPrefix("/")
     }
 
     private static func runTsc(_ tsc: String, repoPath: String) -> VerifyResult {
