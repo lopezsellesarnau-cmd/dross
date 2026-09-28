@@ -92,6 +92,13 @@ struct ShipAssistRail: View {
                         .foregroundStyle(clear ? Theme.ink : Theme.rust)
                         .monospacedDigit()
                 }
+                if let patterns = report.ignorePatterns, !patterns.isEmpty {
+                    // Never let an ignore file make a repo look cleaner silently.
+                    Text("\(report.ignored ?? 0) path(s) skipped by .drossignore: \(patterns.joined(separator: ", "))")
+                        .font(.system(size: f(11), design: .default))
+                        .foregroundStyle(Theme.inkAlpha(0.6))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 if let llmError = report.llmError {
                     Text("LLM drift pass failed — \(llmError). Low-confidence drift shown unreviewed.")
                         .font(.system(size: f(11), design: .default))

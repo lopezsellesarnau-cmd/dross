@@ -62,12 +62,15 @@ struct ScanReport: Codable {
     /// The LLM drift pass was attempted and failed (network, timeout, API
     /// error) — low-confidence drift is shown unreviewed.
     let llmError: String?
+    /// Paths skipped by the repo's `.drossignore`, and its patterns.
+    let ignored: Int?
+    let ignorePatterns: [String]?
 
     var openFindings: [Finding] { findings.filter { !$0.muted } }
     var mutedCount: Int { findings.filter(\.muted).count }
     var openCount: Int { openFindings.count }
 
-    init(repoRoot: String, filesScanned: Int, findings: [Finding], generatedAt: Double, truncated: Bool, llmUsed: Bool? = nil, llmGated: Bool? = nil, llmError: String? = nil) {
+    init(repoRoot: String, filesScanned: Int, findings: [Finding], generatedAt: Double, truncated: Bool, llmUsed: Bool? = nil, llmGated: Bool? = nil, llmError: String? = nil, ignored: Int? = nil, ignorePatterns: [String]? = nil) {
         self.repoRoot = repoRoot
         self.filesScanned = filesScanned
         self.findings = findings
@@ -76,5 +79,7 @@ struct ScanReport: Codable {
         self.llmUsed = llmUsed
         self.llmGated = llmGated
         self.llmError = llmError
+        self.ignored = ignored
+        self.ignorePatterns = ignorePatterns
     }
 }

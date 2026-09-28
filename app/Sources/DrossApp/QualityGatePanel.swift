@@ -127,7 +127,7 @@ struct QualityGatePanel: View {
         Repo: \(report.repoRoot)
         Gate: \(passed ? "PASSED" : "FAILED")
         Files: \(report.filesScanned) · Open: \(report.openCount) · Muted: \(report.mutedCount)
-        \(report.truncated ? "⚠ Scan truncated\n" : "")\(report.llmError.map { "⚠ LLM drift pass failed: \($0)\n" } ?? "")
+        \(report.truncated ? "⚠ Scan truncated\n" : "")\(report.llmError.map { "⚠ LLM drift pass failed: \($0)\n" } ?? "")\((report.ignorePatterns ?? []).isEmpty ? "" : "Skipped by .drossignore: \((report.ignorePatterns ?? []).joined(separator: ", "))\n")
         """
         for c in conditions {
             body += "- [\(c.ok ? "x" : " ")] \(c.label)\n"
