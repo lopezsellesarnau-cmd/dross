@@ -294,6 +294,7 @@ enum VerifiedFixer {
         if !existing.isEmpty && !existing.hasSuffix("\n") { existing += "\n" }
         existing += "\(name)=\n"
         do {
+            FixLedger.willWrite(examplePath)
             try existing.write(toFile: examplePath, atomically: true, encoding: .utf8)
         } catch {
             return Result(ok: false, file: ".env.example", message: error.localizedDescription)
@@ -308,6 +309,7 @@ enum VerifiedFixer {
     private static func writeLines(_ lines: [String], to abs: String, trailingNewline: Bool) {
         var out = lines.joined(separator: "\n")
         if trailingNewline { out += "\n" }
+        FixLedger.willWrite(abs)
         try? out.write(toFile: abs, atomically: true, encoding: .utf8)
     }
 }

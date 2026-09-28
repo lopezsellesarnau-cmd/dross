@@ -357,45 +357,54 @@ enum Engine {
         let message: String
     }
 
-    /// Stage tracked modifications and commit — closes the solo ship loop
-    /// after verified fixes. Does not add untracked files (avoids secrets).
+    /// Commit exactly the files Dross wrote this session (see FixLedger) —
+    /// never the user's other work in progress. Files that already had the
+    /// user's own uncommitted edits before Dross touched them are skipped
+    /// and named, so nothing half-finished ships under Dross's name.
     static func commitFixes(repoPath: String) -> CommitResult {
         let git = "/usr/bin/git"
         guard FileManager.default.isExecutableFile(atPath: git) else {
             return CommitResult(ok: false, message: "git not found at /usr/bin/git.")
         }
-        let gitDir = (repoPath as NSString).appendingPathComponent(".git")
-        guard FileManager.default.fileExists(atPath: gitDir) else {
+        let top = runGit(repoPath, ["rev-parse", "--show-toplevel"])
+        guard top.ok else {
             return CommitResult(ok: false, message: "Not a git repo — open the package root that has .git.")
         }
+        let root = top.out.trimmingCharacters(in: .whitespacesAndNewlines)
 
-        let status = runGit(repoPath, ["status", "--porcelain"])
+        let (clean, mixed) = FixLedger.entries(inRepo: root)
+        let skippedNote = mixed.isEmpty ? "" :
+            "\nNot committed — had your own uncommitted edits before Dross touched them: "
+            + mixed.map { ($0 as NSString).lastPathComponent }.joined(separator: ", ")
+        guard !clean.isEmpty else {
+            return CommitResult(ok: true, message: "Nothing to commit — Dross hasn't changed any files in this session." + skippedNote)
+        }
+
+        // Of the files Dross wrote, only those still different from HEAD
+        // (a reverted auto-correct leaves nothing to commit).
+        let status = runGit(root, ["status", "--porcelain", "--"] + clean)
         guard status.ok else {
             return CommitResult(ok: false, message: status.out.isEmpty ? "git status failed." : status.out)
         }
-        let dirty = status.out
-            .split(separator: "\n")
-            .map { String($0) }
-            .filter { !$0.isEmpty }
-        guard !dirty.isEmpty else {
-            return CommitResult(ok: true, message: "Working tree clean — nothing to commit.")
+        guard !status.out.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            FixLedger.forget(clean, inRepo: root)
+            return CommitResult(ok: true, message: "Nothing to commit — Dross's changes were reverted or already committed." + skippedNote)
         }
 
-        // Only update already-tracked files (Dross rewrites existing sources).
-        let add = runGit(repoPath, ["add", "-u"])
+        let add = runGit(root, ["add", "--"] + clean)
         guard add.ok else {
             return CommitResult(ok: false, message: add.out.isEmpty ? "git add failed." : add.out)
         }
-
-        let commit = runGit(repoPath, [
-            "commit",
-            "-m", "chore: apply Dross verified fixes",
-        ])
+        // Pathspec on commit = only these paths, even if the user had other
+        // changes staged themselves.
+        let commit = runGit(root, ["commit", "-m", "chore: apply Dross verified fixes", "--"] + clean)
         if commit.code == 0 {
-            let short = runGit(repoPath, ["rev-parse", "--short", "HEAD"]).out
+            FixLedger.forget(clean, inRepo: root)
+            let short = runGit(root, ["rev-parse", "--short", "HEAD"]).out
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             let label = short.isEmpty ? "committed" : short
-            return CommitResult(ok: true, message: "Committed \(label) — \(dirty.count) change(s).")
+            let names = clean.map { ($0 as NSString).lastPathComponent }.joined(separator: ", ")
+            return CommitResult(ok: true, message: "Committed \(label) — only files Dross changed: \(names)." + skippedNote)
         }
         let err = commit.out.trimmingCharacters(in: .whitespacesAndNewlines)
         return CommitResult(ok: false, message: err.isEmpty ? "git commit failed." : err)
