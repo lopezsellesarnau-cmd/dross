@@ -16,6 +16,7 @@ export function scoreConfidence(f: Finding): Confidence {
   if (f.check === 'hardcoded-demo') return 'high'
   if (f.check === 'hardcoded-secrets' && f.severity === 'finding') return 'high'
   if (f.check === 'hardcoded-secrets') return 'medium'
+  if (f.check === 'injection') return 'high'
   if (f.check === 'todo-density') return 'medium'
   return 'medium'
 }

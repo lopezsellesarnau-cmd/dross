@@ -1,0 +1,8 @@
+{
+  "description": "Request input flowing into a shell command (line 11), a SQL template literal (line 15) and a sendFile path (line 18) → injection. The safe twins below (parameterized query, execFile with an arg array, path.basename, Number(), a startsWith guard) are negative controls and must NOT be flagged.",
+  "expected": [
+    { "check": "injection", "file": "server.js", "line": 11, "note": "command injection" },
+    { "check": "injection", "file": "server.js", "line": 15, "note": "SQL injection" },
+    { "check": "injection", "file": "server.js", "line": 18, "note": "path traversal" }
+  ]
+}
